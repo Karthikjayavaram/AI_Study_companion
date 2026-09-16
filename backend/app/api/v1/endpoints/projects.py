@@ -1,0 +1,85 @@
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from app.api.deps import get_db, get_current_user
+from app.models.project import Project
+from app.models.space import Space
+from app.models.user import User
+from app.models.activity import ActivityEvent
+from app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
+from app.schemas.common import APIResponse
+
+router = APIRouter()
+
+
+@router.get("", response_model=APIResponse[List[ProjectRead]])
+def list_projects(
+    space_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    skip: int = 0,
+    limit: int = 50,
+):
+    query = db.query(Project).filter(Project.user_id == current_user.id)
+    if space_id:
+        query = query.filter(Project.space_id == space_id)
+    projects = query.offset(skip).limit(limit).all()
+    return APIResponse(data=[ProjectRead.model_validate(p) for p in projects])
+
+
+@router.post("", response_model=APIResponse[ProjectRead], status_code=status.HTTP_201_CREATED)
+def create_project(
+    project_in: ProjectCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Verify space ownership
+    space = (
+        db.query(Space)
+        .filter(Space.id == project_in.space_id, Space.user_id == current_user.id)
+        .first()
+    )
+    if not space:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Specified Space not found or unauthorized.",
+        )
+
+    project = Project(
+        space_id=project_in.space_id,
+        user_id=current_user.id,
+        name=project_in.name,
+        description=project_in.description,
+        learning_goal=project_in.learning_goal,
+    )
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+
+    # Record activity event
+    event = ActivityEvent(
+        user_id=current_user.id,
+        project_id=project.id,
+        event_type="project_created",
+        details={"project_name": project.name, "space_id": space.id},
+    )
+    db.add(event)
+    db.commit()
+
+    return APIResponse(data=ProjectRead.model_validate(project), message="Project created successfully")
+
+
+@router.get("/{project_id}", response_model=APIResponse[ProjectRead])
+def get_project(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    project = (
+        db.query(Project)
+        .filter(Project.id == project_id, Project.user_id == current_user.id)
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return APIResponse(data=ProjectRead.model_validate(project))

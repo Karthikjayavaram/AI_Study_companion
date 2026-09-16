@@ -1,0 +1,80 @@
+# Python virtual environments
+.venv/
+**/.venv/
+.venv*
+backend/.venv/
+env/
+venv/
+ENV/
+
+# Python bytecode & cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & coverage
+.pytest_cache/
+**/.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / Frontend
+node_modules/
+**/node_modules/
+frontend/dist/
+dist/
+*.tsbuildinfo
+.npm
+.eslintcache
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+
+# Databases & local storage
+*.sqlite
+*.sqlite3
+*.db
+**/*.db
+backend/storage/uploads/
+storage/uploads/
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Logs
+*.log
+logs/
+backend/logs/
