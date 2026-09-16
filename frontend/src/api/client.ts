@@ -103,10 +103,11 @@ export const api = {
   deleteMaterial: (id: string) => apiRequest(`/materials/${id}`, { method: 'DELETE' }),
   searchRetrieval: (projectId: string, body: any) => apiRequest(`/projects/${projectId}/retrieval/search`, { method: 'POST', body: JSON.stringify(body) }),
 
-
-
   // Tutor
   getConversations: (projectId: string) => apiRequest(`/tutor/conversations?project_id=${projectId}`),
+  createConversation: (projectId: string, body?: any) => apiRequest(`/tutor/conversations?project_id=${projectId}`, { method: 'POST', body: JSON.stringify(body || {}) }),
+  getConversation: (conversationId: string) => apiRequest(`/tutor/conversations/${conversationId}`),
+  sendTutorMessage: (conversationId: string, content: string) => apiRequest(`/tutor/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ content }) }),
   queryTutor: (body: any) => apiRequest('/tutor/query', { method: 'POST', body: JSON.stringify(body) }),
 
   // Quiz

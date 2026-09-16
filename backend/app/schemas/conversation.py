@@ -4,10 +4,12 @@ from pydantic import BaseModel, ConfigDict
 
 
 class Citation(BaseModel):
+    material_id: Optional[str] = None
     source_title: str
+    chunk_id: Optional[str] = None
+    chunk_index: Optional[int] = None
     page_number: Optional[int] = None
     snippet: str
-    material_id: Optional[str] = None
 
 
 class MessageCreate(BaseModel):
@@ -23,6 +25,10 @@ class MessageRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ConversationCreate(BaseModel):
+    title: Optional[str] = "Study Session"
 
 
 class ConversationRead(BaseModel):
