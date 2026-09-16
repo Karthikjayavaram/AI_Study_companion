@@ -5,7 +5,19 @@ from app.schemas.project import ProjectBase, ProjectCreate, ProjectUpdate, Proje
 from app.schemas.material import MaterialRead, MaterialChunkRead
 from app.schemas.conversation import Citation, MessageCreate, MessageRead, ConversationRead, TutorQueryRequest, TutorResponse
 from app.schemas.concept import ConceptBase, ConceptCreate, ConceptRead, ConceptMasteryRead
-from app.schemas.assessment import QuestionRead, QuizRead, QuizSubmitAnswer, QuizSubmitRequest, AssessmentRead, QuizAttemptRead
+from app.schemas.assessment import (
+    QuestionRead,
+    QuizRead,
+    QuizSubmitAnswer,
+    QuizSubmitRequest,
+    AssessmentRead,
+    QuizAttemptRead,
+    QuizGenerateRequest,
+    QuestionSanitizedRead,
+    QuizAttemptStartResponse,
+    QuestionResultDetail,
+    QuizAttemptResultResponse,
+)
 from app.schemas.recommendation import RecommendationRead
 from app.schemas.activity import ActivityEventCreate, ActivityEventRead
 from app.schemas.ai_usage import AIUsageRead
@@ -45,6 +57,11 @@ __all__ = [
     "QuizSubmitRequest",
     "AssessmentRead",
     "QuizAttemptRead",
+    "QuizGenerateRequest",
+    "QuestionSanitizedRead",
+    "QuizAttemptStartResponse",
+    "QuestionResultDetail",
+    "QuizAttemptResultResponse",
     "RecommendationRead",
     "ActivityEventCreate",
     "ActivityEventRead",

@@ -1,170 +1,270 @@
-from typing import List
-from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+
 from app.api.deps import get_db, get_current_user
-from app.models.assessment import Quiz, Question, QuizAttempt, Assessment
-from app.models.project import Project
-from app.models.concept import ConceptMastery
-from app.models.activity import ActivityEvent
 from app.models.user import User
-from app.schemas.assessment import QuizRead, QuizAttemptRead, QuizSubmitRequest
+from app.schemas.assessment import (
+    QuestionSanitizedRead,
+    QuizAttemptResultResponse,
+    QuizAttemptStartResponse,
+    QuizGenerateRequest,
+    QuizRead,
+    QuizSubmitRequest,
+)
 from app.schemas.common import APIResponse
+from app.services.quiz_service import QuizService
 
 router = APIRouter()
+quiz_service = QuizService()
 
 
-@router.get("", response_model=APIResponse[List[QuizRead]])
+# -------------------------------------------------------------------------
+# LIST QUIZZES
+# -------------------------------------------------------------------------
+
+@router.get("/quiz", response_model=APIResponse[List[QuizRead]])
+@router.get("/quizzes", response_model=APIResponse[List[QuizRead]])
+@router.get("/projects/{project_id}/quizzes", response_model=APIResponse[List[QuizRead]])
 def list_quizzes(
-    project_id: str,
+    project_id: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    project = (
-        db.query(Project)
-        .filter(Project.id == project_id, Project.user_id == current_user.id)
-        .first()
-    )
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    """
+    List all quizzes belonging to the specified project and authenticated user.
+    """
+    if not project_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="project_id parameter is required.",
+        )
 
-    quizzes = db.query(Quiz).filter(Quiz.project_id == project_id).all()
-    return APIResponse(data=[QuizRead.model_validate(q) for q in quizzes])
+    quizzes = quiz_service.get_project_quizzes(db, current_user, project_id)
+    quiz_reads = []
+    for q in quizzes:
+        sanitized_questions = [
+            QuestionSanitizedRead(
+                id=quest.id,
+                quiz_id=quest.quiz_id,
+                concept_id=quest.concept_id,
+                question_order=quest.question_order,
+                question_text=quest.question_text,
+                question_type=quest.question_type,
+                options=quest.options,
+                difficulty=quest.difficulty,
+            )
+            for quest in sorted(q.questions, key=lambda x: x.question_order)
+        ]
+        quiz_reads.append(
+            QuizRead(
+                id=q.id,
+                project_id=q.project_id,
+                user_id=q.user_id,
+                title=q.title,
+                description=q.description,
+                quiz_type=q.quiz_type,
+                difficulty=q.difficulty,
+                question_count=len(sanitized_questions),
+                status=q.status,
+                created_at=q.created_at,
+                questions=sanitized_questions,
+            )
+        )
+
+    return APIResponse(data=quiz_reads)
 
 
-@router.post("/generate", response_model=APIResponse[QuizRead], status_code=status.HTTP_201_CREATED)
-def generate_adaptive_quiz(
-    project_id: str,
+# -------------------------------------------------------------------------
+# GENERATE QUIZ
+# -------------------------------------------------------------------------
+
+@router.post("/quiz/generate", response_model=APIResponse[QuizRead], status_code=status.HTTP_201_CREATED)
+@router.post("/quizzes/generate", response_model=APIResponse[QuizRead], status_code=status.HTTP_201_CREATED)
+@router.post("/projects/{project_id}/quizzes/generate", response_model=APIResponse[QuizRead], status_code=status.HTTP_201_CREATED)
+def generate_quiz(
+    project_id: Optional[str] = None,
+    request: Optional[QuizGenerateRequest] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    project = (
-        db.query(Project)
-        .filter(Project.id == project_id, Project.user_id == current_user.id)
-        .first()
+    """
+    Generate an AI-powered multiple-choice quiz strictly grounded in project study materials.
+    """
+    if not project_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="project_id parameter is required.",
+        )
+
+    req = request or QuizGenerateRequest()
+    quiz = quiz_service.generate_quiz(db, current_user, project_id, req)
+
+    sanitized_questions = [
+        QuestionSanitizedRead(
+            id=quest.id,
+            quiz_id=quest.quiz_id,
+            concept_id=quest.concept_id,
+            question_order=quest.question_order,
+            question_text=quest.question_text,
+            question_type=quest.question_type,
+            options=quest.options,
+            difficulty=quest.difficulty,
+        )
+        for quest in sorted(quiz.questions, key=lambda x: x.question_order)
+    ]
+
+    return APIResponse(
+        data=QuizRead(
+            id=quiz.id,
+            project_id=quiz.project_id,
+            user_id=quiz.user_id,
+            title=quiz.title,
+            description=quiz.description,
+            quiz_type=quiz.quiz_type,
+            difficulty=quiz.difficulty,
+            question_count=len(sanitized_questions),
+            status=quiz.status,
+            created_at=quiz.created_at,
+            questions=sanitized_questions,
+        ),
+        message="Quiz generated successfully from project materials.",
     )
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
-    # Create quiz shell with sample adaptive questions (MCQ + open-ended)
-    quiz = Quiz(
-        project_id=project.id,
-        user_id=current_user.id,
-        title=f"Adaptive Assessment: {project.name}",
-        quiz_type="adaptive",
-        difficulty="medium",
+
+# -------------------------------------------------------------------------
+# GET QUIZ DETAIL
+# -------------------------------------------------------------------------
+
+@router.get("/quiz/{quiz_id}", response_model=APIResponse[QuizRead])
+@router.get("/quizzes/{quiz_id}", response_model=APIResponse[QuizRead])
+def get_quiz(
+    quiz_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Fetch quiz details with sanitized questions (without leaking answers or explanations).
+    """
+    quiz = quiz_service.get_quiz_sanitized(db, current_user, quiz_id)
+    sanitized_questions = [
+        QuestionSanitizedRead(
+            id=quest.id,
+            quiz_id=quest.quiz_id,
+            concept_id=quest.concept_id,
+            question_order=quest.question_order,
+            question_text=quest.question_text,
+            question_type=quest.question_type,
+            options=quest.options,
+            difficulty=quest.difficulty,
+        )
+        for quest in sorted(quiz.questions, key=lambda x: x.question_order)
+    ]
+
+    return APIResponse(
+        data=QuizRead(
+            id=quiz.id,
+            project_id=quiz.project_id,
+            user_id=quiz.user_id,
+            title=quiz.title,
+            description=quiz.description,
+            quiz_type=quiz.quiz_type,
+            difficulty=quiz.difficulty,
+            question_count=len(sanitized_questions),
+            status=quiz.status,
+            created_at=quiz.created_at,
+            questions=sanitized_questions,
+        )
     )
-    db.add(quiz)
-    db.commit()
-    db.refresh(quiz)
 
-    # Add sample foundational MCQ question
-    q1 = Question(
-        quiz_id=quiz.id,
-        question_text="What is the primary role of a loss function during gradient descent optimization?",
-        question_type="mcq",
-        options=[
-            "To measure model error and compute gradients for parameter updates",
-            "To normalize input features between 0 and 1",
-            "To store persistent user conversation history",
-            "To serialize data into JSON format",
-        ],
-        correct_answer="To measure model error and compute gradients for parameter updates",
-        explanation="Loss functions quantify the difference between predictions and ground truth, providing gradients for backpropagation.",
-        difficulty="medium",
+
+# -------------------------------------------------------------------------
+# START QUIZ ATTEMPT
+# -------------------------------------------------------------------------
+
+@router.post("/quiz/{quiz_id}/attempts", response_model=APIResponse[QuizAttemptStartResponse], status_code=status.HTTP_201_CREATED)
+@router.post("/quizzes/{quiz_id}/attempts", response_model=APIResponse[QuizAttemptStartResponse], status_code=status.HTTP_201_CREATED)
+def start_quiz_attempt(
+    quiz_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Start a new quiz attempt. Returns attempt ID and sanitized questions for taking the quiz.
+    """
+    attempt_res = quiz_service.start_quiz_attempt(db, current_user, quiz_id)
+    return APIResponse(
+        data=attempt_res,
+        message="Quiz attempt started.",
     )
-    # Add sample open-ended question
-    q2 = Question(
-        quiz_id=quiz.id,
-        question_text="Explain the trade-off between bias and variance in machine learning models and how regularization impacts it.",
-        question_type="open_ended",
-        options=None,
-        correct_answer=None,
-        explanation="High bias leads to underfitting; high variance leads to overfitting. Regularization introduces a penalty that increases bias slightly to drastically decrease variance.",
-        difficulty="hard",
-    )
-    db.add_all([q1, q2])
-    db.commit()
-    db.refresh(quiz)
-
-    return APIResponse(data=QuizRead.model_validate(quiz), message="Adaptive quiz generated successfully")
 
 
-@router.post("/submit", response_model=APIResponse[QuizAttemptRead])
-def submit_quiz_attempt(
+# -------------------------------------------------------------------------
+# SUBMIT QUIZ ATTEMPT
+# -------------------------------------------------------------------------
+
+@router.post("/quiz/attempts/{attempt_id}/submit", response_model=APIResponse[QuizAttemptResultResponse])
+@router.post("/quiz-attempts/{attempt_id}/submit", response_model=APIResponse[QuizAttemptResultResponse])
+def submit_attempt(
+    attempt_id: str,
     submission: QuizSubmitRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    quiz = db.query(Quiz).filter(Quiz.id == submission.quiz_id, Quiz.user_id == current_user.id).first()
-    if not quiz:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
-
-    attempt = QuizAttempt(
-        quiz_id=quiz.id,
-        user_id=current_user.id,
-        status="completed",
-        completed_at=datetime.now(timezone.utc),
+    """
+    Submit answers for a quiz attempt. Evaluates on the server side and returns
+    the score, explanations, and grounded source citations.
+    """
+    result = quiz_service.submit_quiz_attempt(db, current_user, attempt_id, submission)
+    return APIResponse(
+        data=result,
+        message="Quiz attempt evaluated successfully.",
     )
-    db.add(attempt)
-    db.commit()
-    db.refresh(attempt)
 
-    total_score = 0.0
-    assessments = []
-    for answer_in in submission.answers:
-        question = db.query(Question).filter(Question.id == answer_in.question_id).first()
-        if not question:
-            continue
 
-        if question.question_type == "mcq":
-            is_correct = (answer_in.user_answer.strip().lower() == (question.correct_answer or "").strip().lower())
-            score = 1.0 if is_correct else 0.0
-            feedback = (
-                "Correct! Strong grasp of the definition."
-                if is_correct
-                else f"Incorrect. Key concept: {question.explanation}"
-            )
-            key_concepts = ["Optimization", "Loss Functions"]
-            missing_concepts = [] if is_correct else ["Gradient Direction"]
-        else:
-            # Open-ended evaluation stub (detailed evaluation according to PRD section 9)
-            score = 0.85
-            is_correct = True
-            feedback = (
-                "Good conceptual understanding! You correctly identified the bias-variance trade-off. "
-                "To improve, explicitly mention L1 vs L2 regularization shrinkage mechanisms."
-            )
-            key_concepts = ["Bias", "Variance", "Overfitting"]
-            missing_concepts = ["L1/L2 Regularization"]
+# Backward compatibility with older payload where quiz_id was passed
+@router.post("/submit", response_model=APIResponse[QuizAttemptResultResponse])
+def submit_attempt_legacy(
+    submission: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Legacy submission endpoint supporting either attempt_id in route or quiz_id in payload.
+    """
+    attempt_id = submission.get("attempt_id")
+    quiz_id = submission.get("quiz_id")
 
-        total_score += score
-        ass = Assessment(
-            quiz_attempt_id=attempt.id,
-            question_id=question.id,
-            user_id=current_user.id,
-            user_answer=answer_in.user_answer,
-            is_correct=is_correct,
-            ai_score=score,
-            feedback=feedback,
-            key_concepts_covered=key_concepts,
-            missing_concepts=missing_concepts,
+    if not attempt_id and quiz_id:
+        # Create an attempt on the fly if only quiz_id was provided
+        start_res = quiz_service.start_quiz_attempt(db, current_user, quiz_id)
+        attempt_id = start_res.id
+
+    if not attempt_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="attempt_id or quiz_id is required.",
         )
-        db.add(ass)
-        assessments.append(ass)
 
-    attempt.score = (total_score / len(submission.answers)) if submission.answers else 0.0
-    db.commit()
-    db.refresh(attempt)
+    answers_raw = submission.get("answers", [])
+    parsed_req = QuizSubmitRequest.model_validate({"answers": answers_raw})
+    result = quiz_service.submit_quiz_attempt(db, current_user, attempt_id, parsed_req)
+    return APIResponse(data=result, message="Quiz attempt evaluated successfully.")
 
-    # Record activity event
-    event = ActivityEvent(
-        user_id=current_user.id,
-        project_id=quiz.project_id,
-        event_type="quiz_completed",
-        details={"quiz_id": quiz.id, "score": attempt.score, "attempt_id": attempt.id},
-    )
-    db.add(event)
-    db.commit()
 
-    return APIResponse(data=QuizAttemptRead.model_validate(attempt), message="Quiz assessed successfully")
+# -------------------------------------------------------------------------
+# GET QUIZ ATTEMPT RESULT
+# -------------------------------------------------------------------------
+
+@router.get("/quiz/attempts/{attempt_id}", response_model=APIResponse[QuizAttemptResultResponse])
+@router.get("/quiz-attempts/{attempt_id}", response_model=APIResponse[QuizAttemptResultResponse])
+def get_attempt_result(
+    attempt_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get the detailed evaluated results of a completed quiz attempt.
+    """
+    result = quiz_service.get_quiz_attempt_result(db, current_user, attempt_id)
+    return APIResponse(data=result)

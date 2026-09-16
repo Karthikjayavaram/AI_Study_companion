@@ -18,6 +18,71 @@ export class ApiError extends Error {
   }
 }
 
+export interface QuestionSanitized {
+  id: string;
+  quiz_id: string;
+  concept_id?: string | null;
+  question_order: number;
+  question_text: string;
+  question_type: string;
+  options: string[];
+  difficulty: string;
+}
+
+export interface QuizItem {
+  id: string;
+  project_id: string;
+  user_id: string;
+  title: string;
+  description?: string | null;
+  quiz_type: string;
+  difficulty: string;
+  question_count: number;
+  status: string;
+  created_at: string;
+  questions?: QuestionSanitized[];
+}
+
+export interface QuizAttemptStart {
+  id: string;
+  quiz_id: string;
+  quiz_title: string;
+  user_id: string;
+  started_at: string;
+  status: string;
+  total_questions: number;
+  questions: QuestionSanitized[];
+}
+
+export interface QuestionResult {
+  question_id: string;
+  question_order: number;
+  question_text: string;
+  options?: string[];
+  user_answer: string;
+  correct_answer: string;
+  is_correct: boolean;
+  explanation?: string;
+  source_material_id?: string;
+  source_material_title?: string;
+  source_chunk_id?: string;
+  source_chunk_text?: string;
+}
+
+export interface QuizAttemptResult {
+  id: string;
+  quiz_id: string;
+  quiz_title: string;
+  user_id: string;
+  started_at: string;
+  completed_at?: string;
+  score: number;
+  total_questions: number;
+  correct_answers: number;
+  status: string;
+  results: QuestionResult[];
+}
+
 export const getAuthToken = (): string | null => {
   return localStorage.getItem('study_companion_token');
 };
@@ -111,8 +176,14 @@ export const api = {
   queryTutor: (body: any) => apiRequest('/tutor/query', { method: 'POST', body: JSON.stringify(body) }),
 
   // Quiz
-  getQuizzes: (projectId: string) => apiRequest(`/quiz?project_id=${projectId}`),
-  generateQuiz: (projectId: string) => apiRequest(`/quiz/generate?project_id=${projectId}`, { method: 'POST' }),
+  getQuizzes: (projectId: string) => apiRequest<QuizItem[]>(`/quiz?project_id=${projectId}`),
+  generateQuiz: (projectId: string, body?: { title?: string; difficulty?: string; question_count?: number; material_ids?: string[] }) =>
+    apiRequest<QuizItem>(`/projects/${projectId}/quizzes/generate`, { method: 'POST', body: JSON.stringify(body || {}) }),
+  getQuiz: (quizId: string) => apiRequest<QuizItem>(`/quizzes/${quizId}`),
+  startQuizAttempt: (quizId: string) => apiRequest<QuizAttemptStart>(`/quizzes/${quizId}/attempts`, { method: 'POST' }),
+  submitQuizAttempt: (attemptId: string, answers: { question_id: string; user_answer: string }[]) =>
+    apiRequest<QuizAttemptResult>(`/quiz-attempts/${attemptId}/submit`, { method: 'POST', body: JSON.stringify({ answers }) }),
+  getQuizAttemptResult: (attemptId: string) => apiRequest<QuizAttemptResult>(`/quiz-attempts/${attemptId}`),
   submitQuiz: (body: any) => apiRequest('/quiz/submit', { method: 'POST', body: JSON.stringify(body) }),
 
   // Growth & Mastery

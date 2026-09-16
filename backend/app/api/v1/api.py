@@ -22,7 +22,7 @@ api_router.include_router(materials.router, prefix="/materials", tags=["material
 
 api_router.include_router(tutor.router, prefix="/tutor", tags=["tutor"])
 api_router.include_router(tutor.router, prefix="", tags=["tutor-direct"])
-api_router.include_router(quiz.router, prefix="/quiz", tags=["quiz"])
+api_router.include_router(quiz.router, prefix="", tags=["quiz"])
 api_router.include_router(growth.router, prefix="/growth", tags=["growth"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
