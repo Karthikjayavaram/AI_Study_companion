@@ -11,13 +11,16 @@ class Material(Base, TimestampMixin):
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     title = Column(String(255), nullable=False)
-    file_name = Column(String(255), nullable=False)
-    file_path = Column(String(512), nullable=False)
+    material_type = Column(String(32), default="document", nullable=False)
+    file_name = Column(String(255), nullable=True)
+    file_path = Column(String(512), nullable=True)
     file_size = Column(BigInteger, nullable=False, default=0)
     mime_type = Column(String(128), default="application/pdf", nullable=False)
-    # Status lifecycle: queued -> processing -> ready -> failed
-    status = Column(String(32), default="queued", nullable=False, index=True)
+    extracted_text = Column(Text, nullable=True)
+    # Status lifecycle: uploaded -> processing -> ready -> failed
+    status = Column(String(32), default="uploaded", nullable=False, index=True)
     error_message = Column(Text, nullable=True)
+
 
     # Relationships
     project = relationship("Project", back_populates="materials")

@@ -37,6 +37,7 @@ export const ProjectDashboard: React.FC = () => {
 
   const [project, setProject] = useState<ProjectData | null>(null);
   const [space, setSpace] = useState<SpaceData | null>(null);
+  const [materialsCount, setMaterialsCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,9 +47,13 @@ export const ProjectDashboard: React.FC = () => {
       try {
         setLoading(true);
         setError(null);
-        const projRes = await api.getProject(projectId);
+        const [projRes, matRes] = await Promise.all([
+          api.getProject(projectId),
+          api.getMaterials(projectId).catch(() => ({ data: [] })),
+        ]);
         const proj = projRes.data;
         setProject(proj);
+        setMaterialsCount((matRes.data || []).length);
 
         if (proj?.space_id) {
           const spaceRes = await api.getSpace(proj.space_id).catch(() => null);
@@ -65,6 +70,7 @@ export const ProjectDashboard: React.FC = () => {
 
     fetchProjectData();
   }, [projectId]);
+
 
   if (loading) {
     return (
@@ -135,8 +141,9 @@ export const ProjectDashboard: React.FC = () => {
       {/* Quick Navigation to Project Modules */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {[
-          { label: 'Materials', icon: FileText, to: `/projects/${projectId}/materials`, description: 'Documents & Notes' },
+          { label: 'Materials', icon: FileText, to: `/projects/${projectId}/materials`, description: `${materialsCount} ${materialsCount === 1 ? 'Item' : 'Items'}` },
           { label: 'AI Tutor', icon: Bot, to: `/projects/${projectId}/tutor`, description: 'Interactive Chat' },
+
           { label: 'Adaptive Quiz', icon: CheckSquare, to: `/projects/${projectId}/quiz`, description: 'Knowledge Check' },
           { label: 'Growth & Mastery', icon: TrendingUp, to: `/projects/${projectId}/growth`, description: 'Mastery Tracker' },
           { label: 'Analytics', icon: BarChart3, to: `/projects/${projectId}/analytics`, description: 'Activity History' },

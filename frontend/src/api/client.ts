@@ -97,7 +97,11 @@ export const api = {
 
   // Materials
   getMaterials: (projectId: string) => apiRequest(`/materials?project_id=${projectId}`),
+  getMaterial: (id: string) => apiRequest(`/materials/${id}`),
+  createTextMaterial: (projectId: string, body: any) => apiRequest(`/materials/text?project_id=${projectId}`, { method: 'POST', body: JSON.stringify(body) }),
   uploadMaterial: (formData: FormData) => apiRequest('/materials/upload', { method: 'POST', body: formData }),
+  deleteMaterial: (id: string) => apiRequest(`/materials/${id}`, { method: 'DELETE' }),
+
 
   // Tutor
   getConversations: (projectId: string) => apiRequest(`/tutor/conversations?project_id=${projectId}`),

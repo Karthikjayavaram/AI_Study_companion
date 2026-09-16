@@ -15,14 +15,21 @@ class MaterialChunkRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MaterialCreateText(BaseModel):
+    title: str
+    content: str
+
+
 class MaterialRead(BaseModel):
     id: str
     project_id: str
     user_id: str
     title: str
-    file_name: str
-    file_size: int
-    mime_type: str
+    material_type: str = "document"
+    file_name: Optional[str] = None
+    file_size: int = 0
+    mime_type: str = "application/pdf"
+    extracted_text: Optional[str] = None
     status: str
     error_message: Optional[str] = None
     created_at: datetime
