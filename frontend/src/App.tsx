@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
 import { Home } from './pages/Home';
 import { Login } from './pages/Login';
@@ -20,14 +21,23 @@ export const App: React.FC = () => {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          {/* Public routes — redirect to home if already authenticated */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
 
-          <Route path="/" element={<AppLayout />}>
+          {/* Protected routes — require authentication */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <AppLayout />
+              </ProtectedRoute>
+            }
+          >
             <Route index element={<Home />} />
             <Route path="spaces" element={<Spaces />} />
             <Route path="spaces/:spaceId" element={<SpaceDashboard />} />
-            
+
             {/* Project Scoped Learning Loop */}
             <Route path="projects/:projectId" element={<ProjectDashboard />} />
             <Route path="projects/:projectId/materials" element={<Materials />} />

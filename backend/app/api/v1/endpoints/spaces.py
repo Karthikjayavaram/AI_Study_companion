@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_current_user
 from app.models.space import Space
 from app.models.user import User
-from app.schemas.space import SpaceCreate, SpaceRead
+from app.schemas.space import SpaceCreate, SpaceUpdate, SpaceRead
 from app.schemas.common import APIResponse
 
 router = APIRouter()
@@ -60,3 +60,45 @@ def get_space(
     if not space:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
     return APIResponse(data=SpaceRead.model_validate(space))
+
+
+@router.put("/{space_id}", response_model=APIResponse[SpaceRead])
+def update_space(
+    space_id: str,
+    space_in: SpaceUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    space = (
+        db.query(Space)
+        .filter(Space.id == space_id, Space.user_id == current_user.id)
+        .first()
+    )
+    if not space:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
+
+    update_data = space_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(space, field, value)
+
+    db.commit()
+    db.refresh(space)
+    return APIResponse(data=SpaceRead.model_validate(space), message="Space updated successfully")
+
+
+@router.delete("/{space_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_space(
+    space_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    space = (
+        db.query(Space)
+        .filter(Space.id == space_id, Space.user_id == current_user.id)
+        .first()
+    )
+    if not space:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found")
+
+    db.delete(space)
+    db.commit()

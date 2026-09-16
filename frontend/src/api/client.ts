@@ -85,11 +85,15 @@ export const api = {
   getSpaces: () => apiRequest('/spaces'),
   createSpace: (body: any) => apiRequest('/spaces', { method: 'POST', body: JSON.stringify(body) }),
   getSpace: (id: string) => apiRequest(`/spaces/${id}`),
+  updateSpace: (id: string, body: any) => apiRequest(`/spaces/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteSpace: (id: string) => apiRequest(`/spaces/${id}`, { method: 'DELETE' }),
 
   // Projects
   getProjects: (spaceId?: string) => apiRequest(`/projects${spaceId ? `?space_id=${spaceId}` : ''}`),
   createProject: (body: any) => apiRequest('/projects', { method: 'POST', body: JSON.stringify(body) }),
   getProject: (id: string) => apiRequest(`/projects/${id}`),
+  updateProject: (id: string, body: any) => apiRequest(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteProject: (id: string) => apiRequest(`/projects/${id}`, { method: 'DELETE' }),
 
   // Materials
   getMaterials: (projectId: string) => apiRequest(`/materials?project_id=${projectId}`),

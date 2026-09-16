@@ -96,7 +96,7 @@ def submit_quiz_attempt(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    quiz = db.query(Quiz).filter(Quiz.id == submission.quiz_id).first()
+    quiz = db.query(Quiz).filter(Quiz.id == submission.quiz_id, Quiz.user_id == current_user.id).first()
     if not quiz:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
 
