@@ -1,5 +1,6 @@
 from sqlalchemy import Column, ForeignKey, Integer, String, Text, BigInteger
 from sqlalchemy.orm import relationship
+from app.core.config import settings
 from app.db.session import Base
 from app.models.base import TimestampMixin, VectorType, generate_uuid
 
@@ -37,8 +38,8 @@ class MaterialChunk(Base, TimestampMixin):
     content = Column(Text, nullable=False)
     page_number = Column(Integer, nullable=True)
     token_count = Column(Integer, nullable=True)
-    # Embedding vector column (1536 dims standard for OpenAI text-embedding-3-small)
-    embedding = Column(VectorType(1536), nullable=True)
+    # Dense embedding vector column (dimension matches configured settings.EMBEDDING_DIMENSION, default 384)
+    embedding = Column(VectorType(settings.EMBEDDING_DIMENSION), nullable=True)
 
     # Relationships
     material = relationship("Material", back_populates="chunks")

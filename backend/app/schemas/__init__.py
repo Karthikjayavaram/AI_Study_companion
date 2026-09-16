@@ -4,7 +4,7 @@ from app.schemas.space import SpaceBase, SpaceCreate, SpaceUpdate, SpaceRead
 from app.schemas.project import ProjectBase, ProjectCreate, ProjectUpdate, ProjectRead
 from app.schemas.material import MaterialRead, MaterialChunkRead
 from app.schemas.conversation import Citation, MessageCreate, MessageRead, ConversationRead, TutorQueryRequest, TutorResponse
-from app.schemas.concept import ConceptBase, ConceptCreate, ConceptRead, ConceptMasteryRead
+from app.schemas.concept import ConceptBase, ConceptCreate, ConceptRead, ConceptMasteryRead, GrowthSummary
 from app.schemas.assessment import (
     QuestionRead,
     QuizRead,
@@ -51,6 +51,7 @@ __all__ = [
     "ConceptCreate",
     "ConceptRead",
     "ConceptMasteryRead",
+    "GrowthSummary",
     "QuestionRead",
     "QuizRead",
     "QuizSubmitAnswer",

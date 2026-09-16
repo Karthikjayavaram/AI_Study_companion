@@ -53,7 +53,7 @@ The system continuously answers three questions for the learner:
 | **Frontend** | React 18, Vite, TypeScript, React Router v6, Tailwind CSS, Lucide Icons |
 | **Backend** | Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2.0, Alembic |
 | **Database** | PostgreSQL 16+ with `pgvector` extension (with SQLite test fallback) |
-| **AI Layer** | OpenAI API (`gpt-4o-mini`, `text-embedding-3-small`), LangChain & LangGraph abstractions |
+| **AI Layer** | Hugging Face Inference API (`mistralai/Mistral-7B-Instruct-v0.3`, `sentence-transformers/all-MiniLM-L6-v2`), decoupled `ChatProvider` & `EmbeddingProvider` abstractions |
 | **Background Processing** | Redis, Celery |
 | **Storage** | Abstracted Storage Service (Local filesystem provider + S3/MinIO provider) |
 | **Observability** | Structured Logging, Custom `AIUsage` Telemetry, Langfuse tracing hooks |
@@ -120,7 +120,7 @@ git clone https://github.com/Karthikjayavaram/AI_Study_Companion.git
 cd AI_Study_Companion
 cp .env.example .env
 ```
-Update `.env` with your OpenAI API key or desired configuration.
+Update `.env` with your Hugging Face API key (`HF_API_KEY`) and desired configuration.
 
 ### Step 2: Backend Setup
 ```bash
@@ -189,12 +189,46 @@ This starts:
 
 ---
 
-## 7. AI Layer & Observability
+## 7. AI Layer & Provider Architecture
 
-* **Provider Abstraction**: Defined under `backend/app/ai/base.py` (`BaseLLMClient`), allowing interchangeable LLM backends (OpenAI, Anthropic, or local open weights).
-* **Controlled Application Capabilities**: The AI does not have direct database access. Application operations are exposed through validated backend services.
-* **Groundedness & Citations**: The AI Tutor prioritizes user project materials, referencing specific documents and page numbers. When evidence is insufficient, it explicitly communicates uncertainty.
-* **AI Telemetry & Cost Tracking**: Every AI invocation logs model, feature, token usage (prompt/completion), latency in milliseconds, estimated cost, and status in the `ai_usages` table.
+The AI layer follows a clean, provider-agnostic architecture where application services interact exclusively with decoupled abstract interfaces:
+
+```text
+Application Services (AITutorService, QuizService)
+        │
+        ▼
+   ChatProvider (app/ai/base.py)
+        │
+        ▼
+HuggingFaceChatProvider (app/ai/huggingface_provider.py)
+        │
+        ▼
+Hugging Face Inference API (mistralai/Mistral-7B-Instruct-v0.3)
+
+Application Services (RetrievalService, MaterialProcessor)
+        │
+        ▼
+ EmbeddingProvider (app/ai/base.py)
+        │
+        ▼
+HuggingFaceEmbeddingProvider (app/ai/huggingface_provider.py)
+        │
+        ▼
+Hugging Face Feature Extraction API (sentence-transformers/all-MiniLM-L6-v2, 384 dims)
+```
+
+### Key Design Principles
+* **Hugging Face is the External AI Provider**: The application uses the Hugging Face Inference API for chat generation and dense vector embeddings. No OpenAI API keys are required.
+* **Separation of Concerns**: Chat generation and embedding generation are cleanly decoupled into `ChatProvider` and `EmbeddingProvider` interfaces.
+* **Factory / Dependency Injection**: `get_chat_provider()` and `get_embedding_provider()` instantiate providers based on `AI_PROVIDER=huggingface`.
+* **Configurable Embedding Dimension**: The default embedding dimension is `384` (matching `sentence-transformers/all-MiniLM-L6-v2`). The dimension is strictly validated before storage—no silent padding or truncation.
+* **Safe Secrets & Error Handling**: `HF_API_KEY` is backend-only and never exposed to the frontend, in API responses, or in logs. API keys and bearer tokens are automatically scrubbed from exception messages.
+* **Deterministic Scoring & RAG Grounding**: Quizzes and tutor answers are grounded in project materials with page/chunk citations. Concepts are extracted and tracked with atomic mastery updates.
+* **AI Telemetry & Cost Tracking**: Every AI invocation logs model, feature, token usage, latency in milliseconds, and status in the `ai_usages` table.
+
+> [!NOTE]
+> **PostgreSQL + pgvector Runtime Verification**:
+> Native PostgreSQL + pgvector runtime verification is currently **PENDING** because Docker, WSL, and local PostgreSQL are not installed in this development environment. SQLite fallback tests verify all application logic and migrations 001 through 007.
 
 ---
 
@@ -208,5 +242,5 @@ This repository represents the completed **Phase 1: Foundation & Architecture In
 * [x] React + Vite + TypeScript frontend with PRD navigation shell & dashboard views
 * [x] Passing backend test suite & verified frontend production build
 * [ ] *Next Phase*: Implement PDF text extraction, OCR fallback, and pgvector embeddings pipeline
-* [ ] *Next Phase*: Implement live OpenAI Tutor chat with streaming responses and vector retrieval
+* [ ] *Next Phase*: Implement live Hugging Face Tutor chat with streaming responses and vector retrieval
 * [ ] *Next Phase*: Wire adaptive quiz generator and open-ended AI grading pipeline

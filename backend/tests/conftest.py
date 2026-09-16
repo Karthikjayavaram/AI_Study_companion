@@ -81,3 +81,75 @@ def test_user(db: Session) -> User:
 def auth_headers(test_user: User) -> dict:
     token = create_access_token(subject=test_user.id)
     return {"Authorization": f"Bearer {token}"}
+
+
+# =========================================================================
+# Test AI Provider Setup (Explicitly injected mocks for test suite)
+# =========================================================================
+
+from app.ai.base import ChatProvider, EmbeddingProvider, LLMResult
+from app.core.config import settings
+import app.ai.factory as ai_factory
+
+
+class TestDefaultChatProvider(ChatProvider):
+    def generate_text(
+        self,
+        prompt: str,
+        system_prompt: str = None,
+        temperature: float = 0.2,
+        max_tokens: int = None,
+    ) -> LLMResult:
+        return LLMResult(
+            content="Grounded tutor response based on provided learning materials.",
+            model="test-mock-hf-chat",
+            prompt_tokens=30,
+            completion_tokens=20,
+            total_tokens=50,
+            latency_ms=10,
+        )
+
+
+class TestDefaultEmbeddingProvider(EmbeddingProvider):
+    @property
+    def dimension(self) -> int:
+        return settings.EMBEDDING_DIMENSION
+
+    def embed_text(self, text: str):
+        return [0.01] * self.dimension
+
+    def embed_texts(self, texts):
+        return [[0.01] * self.dimension for _ in texts]
+
+
+@pytest.fixture(autouse=True)
+def setup_test_ai_providers(request, monkeypatch):
+    """
+    Provides explicit test mock providers for test suite execution without real API keys.
+    Does not apply to test_huggingface_provider to allow testing real factory & provider logic.
+    """
+    if "test_huggingface_provider" in request.node.nodeid:
+        return
+
+    default_chat = TestDefaultChatProvider()
+    default_embed = TestDefaultEmbeddingProvider()
+
+    # Wire endpoint singletons if present
+    try:
+        import app.api.v1.endpoints.tutor as tutor_endpoint
+        if hasattr(tutor_endpoint, "tutor_service"):
+            monkeypatch.setattr(tutor_endpoint.tutor_service, "ai_provider", default_chat)
+            if hasattr(tutor_endpoint.tutor_service, "retrieval_service"):
+                monkeypatch.setattr(tutor_endpoint.tutor_service.retrieval_service, "ai_provider", default_embed)
+    except Exception:
+        pass
+
+    try:
+        import app.api.v1.endpoints.quiz as quiz_endpoint
+        if hasattr(quiz_endpoint, "quiz_service"):
+            monkeypatch.setattr(quiz_endpoint.quiz_service, "ai_provider", default_chat)
+    except Exception:
+        pass
+
+    monkeypatch.setattr(ai_factory, "get_chat_provider", lambda *args, **kwargs: default_chat)
+    monkeypatch.setattr(ai_factory, "get_embedding_provider", lambda *args, **kwargs: default_embed)

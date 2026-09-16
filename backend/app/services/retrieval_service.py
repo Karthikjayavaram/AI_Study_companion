@@ -7,7 +7,8 @@ from app.models.material import Material, MaterialChunk
 from app.models.project import Project
 from app.models.space import Space
 from app.models.user import User
-from app.ai.openai_provider import OpenAIProvider
+from app.ai.base import EmbeddingProvider
+from app.ai import factory as ai_factory
 
 logger = logging.getLogger("ai_study_companion")
 
@@ -29,10 +30,11 @@ class RetrievalService:
     Project-scoped vector similarity search service.
     Queries PostgreSQL + pgvector when available, with clean fallback for SQLite test environments.
     Strictly verifies Project -> Space -> User authorization.
+    Depends on abstract EmbeddingProvider.
     """
 
-    def __init__(self, ai_provider: Optional[OpenAIProvider] = None):
-        self.ai_provider = ai_provider or OpenAIProvider()
+    def __init__(self, ai_provider: Optional[EmbeddingProvider] = None):
+        self.ai_provider = ai_provider or ai_factory.get_embedding_provider()
 
     def search_project_chunks(
         self,

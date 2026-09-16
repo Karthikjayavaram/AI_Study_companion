@@ -28,14 +28,21 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
 
-    # AI Configuration
-    OPENAI_API_KEY: str = ""
-    OPENAI_DEFAULT_MODEL: str = "gpt-4o-mini"
-    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
-    EMBEDDING_DIMENSION: int = 1536
+    # AI Provider Architecture
+    AI_PROVIDER: str = "huggingface"
+
+    # Hugging Face Configuration (Primary external AI provider)
+    HF_API_KEY: str = ""
+    HF_CHAT_MODEL: str = "mistralai/Mistral-7B-Instruct-v0.3"
+    HF_EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    EMBEDDING_DIMENSION: int = 384
+    HF_TEMPERATURE: float = 0.2
+    HF_MAX_TOKENS: int = 1024
+    HF_TIMEOUT_SECONDS: float = 30.0
+
+    # Text Chunking Configuration
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 50
-    OPENAI_TEMPERATURE: float = 0.2
 
 
     # Storage

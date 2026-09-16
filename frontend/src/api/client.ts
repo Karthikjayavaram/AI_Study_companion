@@ -83,6 +83,38 @@ export interface QuizAttemptResult {
   results: QuestionResult[];
 }
 
+export interface ConceptItem {
+  id: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  project_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConceptMastery {
+  id: string;
+  concept_id: string;
+  project_id: string;
+  user_id: string;
+  score: number;
+  status: string; // improving, stable, requiring_attention
+  total_attempts: number;
+  correct_attempts: number;
+  last_assessed_at?: string | null;
+  concept?: ConceptItem | null;
+}
+
+export interface GrowthSummary {
+  overall_mastery: number;
+  total_concepts: number;
+  mastered_count: number;
+  improving_count: number;
+  needs_attention_count: number;
+  masteries: ConceptMastery[];
+}
+
 export const getAuthToken = (): string | null => {
   return localStorage.getItem('study_companion_token');
 };
@@ -187,7 +219,9 @@ export const api = {
   submitQuiz: (body: any) => apiRequest('/quiz/submit', { method: 'POST', body: JSON.stringify(body) }),
 
   // Growth & Mastery
-  getMastery: (projectId: string) => apiRequest(`/growth/mastery?project_id=${projectId}`),
+  getMastery: (projectId: string) => apiRequest<ConceptMastery[]>(`/growth/mastery?project_id=${projectId}`),
+  getGrowthSummary: (projectId: string) => apiRequest<GrowthSummary>(`/growth/summary?project_id=${projectId}`),
+  getProjectConcepts: (projectId: string) => apiRequest<ConceptItem[]>(`/growth/concepts?project_id=${projectId}`),
   getRecommendations: (projectId: string) => apiRequest(`/growth/recommendations?project_id=${projectId}`),
 
   // Analytics
@@ -197,3 +231,4 @@ export const api = {
   getAdminMetrics: () => apiRequest('/admin/metrics'),
   getAdminAiUsage: () => apiRequest('/admin/ai-usage'),
 };
+

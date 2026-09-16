@@ -19,9 +19,10 @@ class VectorType(TypeDecorator):
     impl = Text
     cache_ok = True
 
-    def __init__(self, dim: int = 1536, *args, **kwargs):
+    def __init__(self, dim: int = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.dim = dim
+        from app.core.config import settings
+        self.dim = dim if dim is not None else settings.EMBEDDING_DIMENSION
 
     def load_dialect_impl(self, dialect):
         if dialect.name == "postgresql" and HAS_PGVECTOR:

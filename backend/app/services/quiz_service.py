@@ -10,11 +10,13 @@ from app.core.config import settings
 from app.models.activity import ActivityEvent
 from app.models.ai_usage import AIUsage
 from app.models.assessment import Assessment, Question, Quiz, QuizAttempt
+from app.models.concept import Concept
 from app.models.material import Material, MaterialChunk
 from app.models.project import Project
 from app.models.space import Space
 from app.models.user import User
-from app.ai.openai_provider import OpenAIProvider
+from app.ai.base import ChatProvider
+from app.ai import factory as ai_factory
 from app.schemas.assessment import (
     QuestionResultDetail,
     QuestionSanitizedRead,
@@ -31,10 +33,11 @@ class QuizService:
     """
     Service for adaptive quiz generation, attempt management, server-side scoring,
     and grounded source citation review.
+    Depends on abstract ChatProvider.
     """
 
-    def __init__(self, ai_provider: Optional[OpenAIProvider] = None):
-        self.ai_provider = ai_provider or OpenAIProvider()
+    def __init__(self, ai_provider: Optional[ChatProvider] = None):
+        self.ai_provider = ai_provider or ai_factory.get_chat_provider()
 
     def _authorize_project(self, db: Session, user: User, project_id: str) -> Project:
         project = (
@@ -207,7 +210,8 @@ class QuizService:
             '      "correct_answer": "Option A",\n'
             '      "explanation": "string explaining reasoning",\n'
             '      "difficulty": "easy|medium|hard",\n'
-            '      "source_chunk_id": "string chunk id"\n'
+            '      "source_chunk_id": "string chunk id",\n'
+            '      "concept_name": "short concept name this question tests (e.g. Gradient Descent, Regularization)"\n'
             '    }\n'
             '  ]\n'
             '}\n'
@@ -225,7 +229,7 @@ class QuizService:
             llm_result = self.ai_provider.generate_text(
                 prompt=user_prompt,
                 system_prompt=system_prompt,
-                temperature=settings.OPENAI_TEMPERATURE,
+                temperature=settings.HF_TEMPERATURE,
             )
             raw_text = (llm_result.content or "").strip()
 
@@ -332,9 +336,46 @@ class QuizService:
                 difficulty=str(q_data.get("difficulty") or target_difficulty).lower(),
             )
             db.add(db_q)
-            created_questions.append(db_q)
+            created_questions.append((db_q, q_data))
 
         db_quiz.question_count = len(created_questions)
+        db.flush()  # Flush to get question IDs before concept linking
+
+        # --- Concept Extraction: find-or-create concepts and link to questions ---
+        concept_cache: Dict[str, str] = {}  # normalized_name -> concept.id
+        for db_q, q_data in created_questions:
+            raw_concept = str(q_data.get("concept_name") or "").strip()
+            if not raw_concept or len(raw_concept) > 255:
+                continue
+
+            normalized = raw_concept.lower().strip()
+            if normalized in concept_cache:
+                db_q.concept_id = concept_cache[normalized]
+            else:
+                # Find existing concept in the project
+                existing = (
+                    db.query(Concept)
+                    .filter(
+                        Concept.project_id == project.id,
+                        Concept.name == raw_concept,
+                    )
+                    .first()
+                )
+                if existing:
+                    concept_cache[normalized] = existing.id
+                    db_q.concept_id = existing.id
+                else:
+                    new_concept = Concept(
+                        project_id=project.id,
+                        name=raw_concept,
+                        description=f"Concept extracted from quiz: {quiz_title}",
+                        category=None,
+                    )
+                    db.add(new_concept)
+                    db.flush()  # Get the new concept's ID
+                    concept_cache[normalized] = new_concept.id
+                    db_q.concept_id = new_concept.id
+
         db.commit()
         db.refresh(db_quiz)
 
@@ -357,7 +398,7 @@ class QuizService:
                     user_id=user.id,
                     project_id=project.id,
                     feature="quiz",
-                    model=llm_result.model or settings.OPENAI_DEFAULT_MODEL,
+                    model=llm_result.model or settings.HF_CHAT_MODEL,
                     prompt_tokens=llm_result.prompt_tokens,
                     completion_tokens=llm_result.completion_tokens,
                     total_tokens=llm_result.total_tokens,
@@ -540,6 +581,16 @@ class QuizService:
         attempt.correct_answers = correct_count
         attempt.completed_at = datetime.now(timezone.utc)
         attempt.status = "completed"
+
+        # --- Atomic Mastery Update: update concept masteries within this transaction ---
+        try:
+            from app.services.growth_service import GrowthService
+            growth_service = GrowthService()
+            growth_service.update_mastery_from_quiz_attempt(
+                db, user, quiz, assessment_records
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update concept mastery during quiz submission: {e}")
 
         db.commit()
         db.refresh(attempt)

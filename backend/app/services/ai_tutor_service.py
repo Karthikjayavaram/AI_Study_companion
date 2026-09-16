@@ -10,7 +10,8 @@ from app.models.space import Space
 from app.models.user import User
 from app.models.activity import ActivityEvent
 from app.models.ai_usage import AIUsage
-from app.ai.openai_provider import OpenAIProvider
+from app.ai.base import ChatProvider, EmbeddingProvider
+from app.ai import factory as ai_factory
 from app.services.retrieval_service import RetrievalService
 from app.schemas.conversation import Citation, TutorResponse
 
@@ -22,15 +23,25 @@ class AITutorService:
     RAG AI Tutor Service orchestrating grounded question answering.
     Enforces Project -> Space -> User authorization, project-scoped vector retrieval,
     deterministic context building, prompt-injection defense, and message persistence.
+    Depends on abstract ChatProvider interface.
     """
 
     def __init__(
         self,
         retrieval_service: Optional[RetrievalService] = None,
-        ai_provider: Optional[OpenAIProvider] = None,
+        ai_provider: Optional[ChatProvider] = None,
     ):
-        self.retrieval_service = retrieval_service or RetrievalService()
-        self.ai_provider = ai_provider or OpenAIProvider()
+        self.ai_provider = ai_provider or ai_factory.get_chat_provider()
+        if retrieval_service is not None:
+            self.retrieval_service = retrieval_service
+        elif (
+            isinstance(self.ai_provider, EmbeddingProvider)
+            or hasattr(self.ai_provider, "generate_embeddings")
+            or hasattr(self.ai_provider, "embed_texts")
+        ):
+            self.retrieval_service = RetrievalService(ai_provider=self.ai_provider)
+        else:
+            self.retrieval_service = RetrievalService()
 
     def process_tutor_query(
         self,
@@ -166,7 +177,7 @@ class AITutorService:
                 llm_result = self.ai_provider.generate_text(
                     prompt=prompt,
                     system_prompt=system_prompt,
-                    temperature=settings.OPENAI_TEMPERATURE,
+                    temperature=settings.HF_TEMPERATURE,
                 )
                 tutor_answer = llm_result.content
             except HTTPException:
@@ -209,7 +220,7 @@ class AITutorService:
                     user_id=user.id,
                     project_id=project.id,
                     feature="tutor",
-                    model=llm_result.model or settings.OPENAI_DEFAULT_MODEL,
+                    model=llm_result.model or settings.HF_CHAT_MODEL,
                     prompt_tokens=llm_result.prompt_tokens,
                     completion_tokens=llm_result.completion_tokens,
                     total_tokens=llm_result.total_tokens,

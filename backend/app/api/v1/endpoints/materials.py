@@ -236,3 +236,45 @@ def delete_material(
     db.delete(material)
     db.commit()
     return APIResponse(data={"id": material_id}, message="Material deleted successfully")
+
+
+@router.post("/{material_id}/reprocess", response_model=APIResponse[MaterialRead])
+def reprocess_material(
+    material_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Reprocesses an existing material: regenerates text chunks and dense vector embeddings
+    using the active EmbeddingProvider. Replaces old chunks idempotently.
+    """
+    material = (
+        db.query(Material)
+        .filter(Material.id == material_id, Material.user_id == current_user.id)
+        .first()
+    )
+    if not material:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
+
+    _verify_project_ownership(material.project_id, current_user.id, db)
+
+    if not material.extracted_text or not material.extracted_text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Material has no extracted text to reprocess.",
+        )
+
+    try:
+        MaterialProcessor.process_material_chunks_and_embeddings(db, material)
+    except Exception as e:
+        logger.error(f"Reprocessing failed for material {material_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Reprocessing failed: {str(e)}",
+        )
+
+    db.refresh(material)
+    return APIResponse(
+        data=MaterialRead.model_validate(material),
+        message="Material reprocessed and embeddings regenerated successfully.",
+    )

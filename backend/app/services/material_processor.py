@@ -3,9 +3,11 @@ import logging
 from typing import Tuple, Optional, List
 import pypdf
 from sqlalchemy.orm import Session
+from app.core.config import settings
 from app.models.material import Material, MaterialChunk
 from app.services.material_chunker import MaterialChunker
-from app.ai.openai_provider import OpenAIProvider
+from app.ai.base import EmbeddingProvider
+from app.ai import factory as ai_factory
 
 logger = logging.getLogger("ai_study_companion")
 
@@ -13,7 +15,8 @@ logger = logging.getLogger("ai_study_companion")
 class MaterialProcessor:
     """
     Extracts text content from uploaded learning materials (PDFs, text documents),
-    chunks the text, generates vector embeddings, and persists MaterialChunks into PostgreSQL / pgvector.
+    chunks the text, generates vector embeddings using the configured EmbeddingProvider,
+    and persists MaterialChunks. Validates vector dimension before storage.
     """
 
     @staticmethod
@@ -44,10 +47,11 @@ class MaterialProcessor:
     def process_material_chunks_and_embeddings(
         db: Session,
         material: Material,
-        ai_provider: Optional[OpenAIProvider] = None,
+        ai_provider: Optional[EmbeddingProvider] = None,
     ) -> List[MaterialChunk]:
         """
-        Chunks the material's extracted_text, computes vector embeddings,
+        Chunks the material's extracted_text, computes vector embeddings via EmbeddingProvider,
+        validates that the embedding dimension matches settings.EMBEDDING_DIMENSION,
         deletes any pre-existing chunks for idempotency, and persists new MaterialChunk records.
         """
         if not material.extracted_text or not material.extracted_text.strip():
@@ -55,7 +59,7 @@ class MaterialProcessor:
             db.commit()
             return []
 
-        ai_client = ai_provider or OpenAIProvider()
+        ai_client = ai_provider or ai_factory.get_embedding_provider()
         chunker = MaterialChunker()
 
         # Step 1: Chunk text
@@ -68,7 +72,10 @@ class MaterialProcessor:
         # Step 2: Generate embeddings
         texts = [c["content"] for c in chunks_data]
         try:
-            embeddings = ai_client.generate_embeddings(texts)
+            if hasattr(ai_client, "embed_texts"):
+                embeddings = ai_client.embed_texts(texts)
+            else:
+                embeddings = ai_client.generate_embeddings(texts)
         except Exception as e:
             logger.error(f"Embedding generation failed for material {material.id}: {e}", exc_info=True)
             material.status = "failed"
@@ -76,20 +83,34 @@ class MaterialProcessor:
             db.commit()
             raise RuntimeError(f"Embedding generation failed: {e}") from e
 
-        # Step 3: Remove old chunks for idempotency / reprocessing
+        # Step 3: Validate embedding dimensions
+        expected_dim = settings.EMBEDDING_DIMENSION
+        for i, emb in enumerate(embeddings):
+            if len(emb) != expected_dim:
+                err_msg = (
+                    f"Embedding dimension mismatch: chunk {i} has {len(emb)} dimensions, "
+                    f"but configured EMBEDDING_DIMENSION is {expected_dim}. "
+                    "Refusing to save inconsistent vectors."
+                )
+                logger.error(err_msg)
+                material.status = "failed"
+                material.error_message = err_msg
+                db.commit()
+                raise ValueError(err_msg)
+
+        # Step 4: Remove old chunks for idempotency / reprocessing
         db.query(MaterialChunk).filter(MaterialChunk.material_id == material.id).delete()
 
-        # Step 4: Save new chunks
+        # Step 5: Save new chunks
         new_chunks = []
         for i, cdata in enumerate(chunks_data):
-            chunk_embedding = embeddings[i] if i < len(embeddings) else [0.0] * 1536
             chunk = MaterialChunk(
                 material_id=material.id,
                 project_id=material.project_id,
                 chunk_index=cdata["chunk_index"],
                 content=cdata["content"],
                 token_count=cdata["token_count"],
-                embedding=chunk_embedding,
+                embedding=embeddings[i],
             )
             db.add(chunk)
             new_chunks.append(chunk)

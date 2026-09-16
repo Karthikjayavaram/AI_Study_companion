@@ -16,4 +16,3 @@ pytest>=8.2.0
 pytest-asyncio>=0.23.6
 redis>=5.0.4
 celery>=5.4.0
-openai>=1.30.0
