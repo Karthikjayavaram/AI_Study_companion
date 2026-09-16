@@ -95,12 +95,14 @@ export const api = {
   updateProject: (id: string, body: any) => apiRequest(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteProject: (id: string) => apiRequest(`/projects/${id}`, { method: 'DELETE' }),
 
-  // Materials
+  // Materials & Retrieval
   getMaterials: (projectId: string) => apiRequest(`/materials?project_id=${projectId}`),
   getMaterial: (id: string) => apiRequest(`/materials/${id}`),
   createTextMaterial: (projectId: string, body: any) => apiRequest(`/materials/text?project_id=${projectId}`, { method: 'POST', body: JSON.stringify(body) }),
   uploadMaterial: (formData: FormData) => apiRequest('/materials/upload', { method: 'POST', body: formData }),
   deleteMaterial: (id: string) => apiRequest(`/materials/${id}`, { method: 'DELETE' }),
+  searchRetrieval: (projectId: string, body: any) => apiRequest(`/projects/${projectId}/retrieval/search`, { method: 'POST', body: JSON.stringify(body) }),
+
 
 
   // Tutor

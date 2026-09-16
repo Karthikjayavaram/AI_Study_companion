@@ -83,11 +83,14 @@ def create_text_material(
         extracted_text=text_content,
         file_size=len(text_content.encode("utf-8")),
         mime_type="text/plain",
-        status="ready",
+        status="processing",
     )
     db.add(material)
     db.commit()
     db.refresh(material)
+
+    # Process chunks & embeddings
+    MaterialProcessor.process_material_chunks_and_embeddings(db, material)
 
     # Track activity
     event = ActivityEvent(
@@ -101,7 +104,7 @@ def create_text_material(
 
     return APIResponse(
         data=MaterialRead.model_validate(material),
-        message="Text material added successfully.",
+        message="Text material added and embedded successfully.",
     )
 
 
@@ -142,7 +145,7 @@ async def upload_material(
 
     # Extract text content if PDF or TXT
     extracted_text = None
-    proc_status = "ready"
+    proc_status = "processing"
     err_msg = None
 
     if file_ext == ".pdf":
@@ -169,6 +172,10 @@ async def upload_material(
     db.add(material)
     db.commit()
     db.refresh(material)
+
+    if material.extracted_text and proc_status != "failed":
+        MaterialProcessor.process_material_chunks_and_embeddings(db, material)
+
 
     # Track activity
     event = ActivityEvent(

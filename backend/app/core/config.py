@@ -32,7 +32,11 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_DEFAULT_MODEL: str = "gpt-4o-mini"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_DIMENSION: int = 1536
+    CHUNK_SIZE: int = 500
+    CHUNK_OVERLAP: int = 50
     OPENAI_TEMPERATURE: float = 0.2
+
 
     # Storage
     STORAGE_BACKEND: str = "local"  # "local" or "s3"
