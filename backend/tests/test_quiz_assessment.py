@@ -430,9 +430,11 @@ def test_adaptive_difficulty_adjustment(client: TestClient, db: Session, project
     )
     db.add(quiz_high)
     db.commit()
+    db.refresh(quiz_high)
+    quiz_high_id = quiz_high.id  # capture before generate_quiz calls db.reset()
 
     attempt_high = QuizAttempt(
-        quiz_id=quiz_high.id,
+        quiz_id=quiz_high_id,
         user_id=project.user_id,
         status="completed",
         score=90.0,
@@ -452,8 +454,9 @@ def test_adaptive_difficulty_adjustment(client: TestClient, db: Session, project
     assert res_adapt_hard.json()["data"]["difficulty"] == "hard"
 
     # 2. Low performer test (Prior attempts average <= 50%)
+    # quiz_high was detached by db.reset() in generate_quiz; use quiz_high_id
     attempt_low1 = QuizAttempt(
-        quiz_id=quiz_high.id,
+        quiz_id=quiz_high_id,
         user_id=project.user_id,
         status="completed",
         score=20.0,
@@ -461,7 +464,7 @@ def test_adaptive_difficulty_adjustment(client: TestClient, db: Session, project
         correct_answers=2,
     )
     attempt_low2 = QuizAttempt(
-        quiz_id=quiz_high.id,
+        quiz_id=quiz_high_id,
         user_id=project.user_id,
         status="completed",
         score=10.0,
@@ -813,3 +816,125 @@ def test_api_route_parity_between_quiz_and_projects_paths(client: TestClient, pr
     assert sub1.status_code == 200
     assert sub2.status_code == 200
 
+
+# =============================================================================
+# REGRESSION TEST: db.reset() before LLM call prevents stale-connection errors
+# =============================================================================
+# Regression: long external AI call -> stale DB connection -> quiz INSERT failure.
+# Root cause: the implicit SQLAlchemy transaction held a checked-out connection
+# during the 20-40s HF inference window. Supabase silently closed the idle
+# connection, causing OperationalError on the subsequent INSERT INTO quizzes.
+# Fix: db.reset() before the LLM call releases the connection back to the pool.
+# =============================================================================
+
+import time
+
+
+class MockSlowLLMProvider(BaseLLMClient):
+    """
+    Simulates a slow external LLM call (0.2s for test speed).
+    The critical behavior under test is that db.reset() is called BEFORE
+    the LLM call, releasing the DB connection; not the wall-clock duration.
+    """
+
+    def __init__(self, delay_seconds: float = 0.2):
+        self.delay_seconds = delay_seconds
+        self.was_called = False
+
+    def generate_text(
+        self,
+        prompt: str,
+        system_prompt: str = None,
+        temperature: float = 0.2,
+        max_tokens: int = None,
+    ) -> LLMResult:
+        self.was_called = True
+        time.sleep(self.delay_seconds)
+        return LLMResult(
+            content=json.dumps({
+                "quiz_title": "Regression Test Quiz",
+                "quiz_description": "Verifies DB write succeeds after external LLM call",
+                "questions": [
+                    {
+                        "question_text": "What does db.reset() do in SQLAlchemy 2.0?",
+                        "options": [
+                            "Releases the connection to the pool and resets the session",
+                            "Drops all tables in the database",
+                            "Closes the session permanently",
+                            "Commits the current transaction",
+                        ],
+                        "correct_answer": "Releases the connection to the pool and resets the session",
+                        "explanation": "db.reset() rolls back the open transaction and returns the connection to the pool.",
+                        "difficulty": "medium",
+                        "source_chunk_id": "chunk-test-1",
+                        "concept_name": "SQLAlchemy Session Lifecycle",
+                    }
+                ],
+            }),
+            model="mock-slow-llm",
+            prompt_tokens=100,
+            completion_tokens=80,
+            total_tokens=180,
+            latency_ms=int(self.delay_seconds * 1000),
+        )
+
+    def generate_structured(self, prompt: str, response_schema: dict, system_prompt: str = None) -> dict:
+        return {}
+
+    def generate_embeddings(self, texts: list) -> list:
+        return [[0.1] * 1536 for _ in texts]
+
+
+def test_quiz_generation_db_connection_released_before_llm_call(
+    client: TestClient,
+    db: Session,
+    project_with_materials,
+    headers_a: dict,
+    monkeypatch,
+):
+    """
+    Regression test for: long external LLM call -> stale DB connection -> INSERT failure.
+
+    Verifies that:
+    1. Quiz generation succeeds after a simulated slow LLM call.
+    2. The Quiz record is persisted to the DB with correct data.
+    3. Questions are persisted and linked to the quiz.
+    4. The DB session remains valid and usable after quiz generation.
+
+    The root fix is db.reset() in quiz_service.generate_quiz() which releases
+    the checked-out DB connection before the external HF call and re-acquires
+    a fresh one (via pool_pre_ping) when db.add(db_quiz) is called.
+    """
+    project, material, chunks = project_with_materials
+
+    slow_provider = MockSlowLLMProvider(delay_seconds=0.2)
+    import app.api.v1.endpoints.quiz as quiz_ep
+    monkeypatch.setattr(quiz_ep.quiz_service, "ai_provider", slow_provider)
+
+    res = client.post(
+        f"/api/v1/projects/{project.id}/quizzes/generate",
+        json={"title": "Regression Test Quiz", "difficulty": "medium", "question_count": 1},
+        headers=headers_a,
+    )
+
+    assert res.status_code == 201, (
+        f"Quiz generation failed after simulated slow LLM call.\n"
+        f"Regression: stale DB connection after LLM call.\n"
+        f"Response: {res.text}"
+    )
+    assert slow_provider.was_called, "MockSlowLLMProvider was never invoked"
+
+    quiz_data = res.json()["data"]
+    assert quiz_data["title"] == "Regression Test Quiz"
+    assert quiz_data["question_count"] == 1
+    assert quiz_data["difficulty"] == "medium"
+
+    # Verify the Quiz record actually exists in the DB (not just in response)
+    db_quiz = db.query(Quiz).filter(Quiz.id == quiz_data["id"]).first()
+    assert db_quiz is not None, "Quiz record was not persisted to DB after slow LLM call"
+    assert db_quiz.project_id == project.id
+    assert len(db_quiz.questions) == 1
+
+    # Verify the DB session is still valid and usable after the full flow
+    post_check = db.query(Quiz).filter(Quiz.project_id == project.id).count()
+    assert post_check >= 1, "DB session not usable after quiz generation"

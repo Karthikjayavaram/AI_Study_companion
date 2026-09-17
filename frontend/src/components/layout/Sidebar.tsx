@@ -95,8 +95,7 @@ export const Sidebar: React.FC = () => {
 
         <div>
           <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 mb-2 flex items-center justify-between">
-            <span>Learning Loop</span>
-            <span className="text-[10px] text-indigo-400 font-mono">PRD v3</span>
+            <span>Learning Tools</span>
           </div>
           <nav className="space-y-1">
             {projectNav.map((item) => (
@@ -120,9 +119,9 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      <div className="p-3 bg-slate-800/50 border border-slate-800 rounded-xl">
+      <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl">
         <div className="text-xs text-slate-400 mb-1">
-          {activeProjectId ? 'Active Study Loop' : 'No Project Selected'}
+          {activeProjectId ? 'Current Workspace' : 'No Project Selected'}
         </div>
         <div
           className={`text-xs flex items-center gap-1.5 font-medium ${
@@ -134,7 +133,7 @@ export const Sidebar: React.FC = () => {
               activeProjectId ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'
             }`}
           ></span>
-          {activeProjectId ? 'Context Preserved' : 'Select a Project'}
+          {activeProjectId ? 'Ready to Learn' : 'Select a Project'}
         </div>
       </div>
     </aside>

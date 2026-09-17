@@ -47,31 +47,29 @@ export const Growth: React.FC = () => {
     fetchGrowthData();
   }, [fetchGrowthData]);
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'improving':
-        return {
-          label: 'Mastered',
-          icon: <CheckCircle className="w-3 h-3" />,
-          className: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-          barColor: 'bg-emerald-500',
-        };
-      case 'stable':
-        return {
-          label: 'Stable',
-          icon: <TrendingUp className="w-3 h-3" />,
-          className: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
-          barColor: 'bg-indigo-500',
-        };
-      case 'requiring_attention':
-      default:
-        return {
-          label: 'Needs Attention',
-          icon: <AlertTriangle className="w-3 h-3" />,
-          className: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-          barColor: 'bg-amber-500',
-        };
+  const getStatusBadge = (score: number, status?: string) => {
+    if (score >= 80) {
+      return {
+        label: 'Strong',
+        icon: <CheckCircle className="w-3 h-3" />,
+        className: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+        barColor: 'bg-emerald-500',
+      };
     }
+    if (score >= 50) {
+      return {
+        label: 'Developing',
+        icon: <TrendingUp className="w-3 h-3" />,
+        className: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+        barColor: 'bg-indigo-500',
+      };
+    }
+    return {
+      label: 'Needs Practice',
+      icon: <AlertTriangle className="w-3 h-3" />,
+      className: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+      barColor: 'bg-amber-500',
+    };
   };
 
   const getRecommendationDetails = (rec: NextActionResponse) => {
@@ -87,14 +85,14 @@ export const Growth: React.FC = () => {
         return {
           badge: 'Developing',
           badgeColor: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
-          buttonText: 'Review Concept',
+          buttonText: 'Review Concept with Tutor',
           icon: Sparkles,
         };
       case 'mixed_review':
         return {
-          badge: 'Challenge Ready',
+          badge: 'Strong / Ready',
           badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-          buttonText: 'Start Mixed Quiz',
+          buttonText: 'Take Challenge Quiz',
           icon: Award,
         };
       case 'start_learning':
@@ -102,7 +100,7 @@ export const Growth: React.FC = () => {
         return {
           badge: 'Getting Started',
           badgeColor: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-          buttonText: 'Explore Materials',
+          buttonText: 'Explore Study Materials',
           icon: Compass,
         };
     }
@@ -240,17 +238,17 @@ export const Growth: React.FC = () => {
             <div className="flex items-center gap-1.5 text-xs">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
               <span className="text-slate-300 font-semibold">{summary.mastered_count}</span>
-              <span className="text-slate-400">Mastered</span>
+              <span className="text-slate-400">Strong</span>
             </div>
             <div className="flex items-center gap-1.5 text-xs">
               <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
               <span className="text-slate-300 font-semibold">{summary.improving_count}</span>
-              <span className="text-slate-400">Stable</span>
+              <span className="text-slate-400">Developing</span>
             </div>
             <div className="flex items-center gap-1.5 text-xs">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
               <span className="text-slate-300 font-semibold">{summary.needs_attention_count}</span>
-              <span className="text-slate-400">Needs Attention</span>
+              <span className="text-slate-400">Needs Practice</span>
             </div>
           </div>
         </div>
@@ -274,7 +272,7 @@ export const Growth: React.FC = () => {
 
         <div className="divide-y divide-slate-800/60">
           {summary.masteries.map((m: ConceptMastery) => {
-            const badge = getStatusBadge(m.status);
+            const badge = getStatusBadge(m.score, m.status);
             const conceptName = m.concept?.name || 'Unknown Concept';
             return (
               <div key={m.id} className="py-4 first:pt-0 last:pb-0 space-y-2">

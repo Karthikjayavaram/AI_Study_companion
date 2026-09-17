@@ -19,6 +19,7 @@ import {
   FileText,
   Loader2,
   Plus,
+  Bot,
 } from 'lucide-react';
 import { api, QuizItem, QuestionSanitized, QuizAttemptStart, QuizAttemptResult, ApiError } from '../api/client';
 
@@ -323,35 +324,36 @@ export const Quiz: React.FC = () => {
   // ---------------------------------------------------------------------------
   if (viewMode === 'results' && evaluatedResult) {
     const isPassing = evaluatedResult.score >= 70;
+    const accuracy = Math.round((evaluatedResult.correct_answers / (evaluatedResult.total_questions || 1)) * 100);
 
     return (
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Hero Score Banner */}
-        <div className="p-8 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 border border-slate-800 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
+        <div className="p-8 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 border border-slate-800 space-y-6 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+            <div className="space-y-1">
               <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">
-                Assessment Completed
+                Assessment Summary
               </span>
               <h1 className="text-2xl font-bold text-white tracking-tight">
                 {evaluatedResult.quiz_title}
               </h1>
-              <p className="text-xs text-slate-400 mt-1">
-                Server-evaluated score based strictly on project learning materials.
+              <p className="text-xs text-slate-400">
+                Grounded evaluation based strictly on your uploaded project materials.
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
               <div className="text-right">
                 <div className="text-3xl font-extrabold text-white tracking-tight">
                   {evaluatedResult.score}%
                 </div>
-                <div className="text-[11px] font-medium text-slate-400">
-                  {evaluatedResult.correct_answers} / {evaluatedResult.total_questions} Correct
+                <div className="text-xs font-medium text-slate-400">
+                  {evaluatedResult.correct_answers} of {evaluatedResult.total_questions} Correct ({accuracy}% Accuracy)
                 </div>
               </div>
               <div
-                className={`w-14 h-14 rounded-2xl flex items-center justify-center border shadow-lg ${
+                className={`w-14 h-14 rounded-2xl flex items-center justify-center border shadow-lg shrink-0 ${
                   isPassing
                     ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                     : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
@@ -362,7 +364,36 @@ export const Quiz: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pt-2">
+          {/* Next Learning Action banner */}
+          <div className="p-4 rounded-xl bg-indigo-950/40 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Sparkles className="w-5 h-5 text-indigo-400 shrink-0" />
+              <div>
+                <div className="text-xs font-bold text-white">Next Learning Action</div>
+                <div className="text-xs text-slate-300">
+                  {isPassing
+                    ? 'Great mastery! Check your updated growth tracking or challenge yourself with another topic.'
+                    : 'Review the questions you missed with your AI Tutor to solidify the foundational concepts.'}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link
+                to={`/projects/${projectId}/tutor`}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-sm"
+              >
+                <Bot className="w-3.5 h-3.5" /> Ask AI Tutor
+              </Link>
+              <Link
+                to={`/projects/${projectId}/growth`}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
+              >
+                View Mastery
+              </Link>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-1 border-t border-slate-800/80">
             <button
               onClick={() => setViewMode('list')}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
@@ -383,85 +414,91 @@ export const Quiz: React.FC = () => {
         {/* Detailed Question Review Breakdown */}
         <div className="space-y-4">
           <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider px-1">
-            Question Explanations & Citations
+            Question Explanations & Source Citations
           </h2>
 
-          {evaluatedResult.results.map((res, index) => (
-            <div
-              key={res.question_id || index}
-              className={`p-6 rounded-2xl border space-y-4 transition-all ${
-                res.is_correct
-                  ? 'bg-slate-900/60 border-emerald-500/30'
-                  : 'bg-slate-900/60 border-rose-500/30'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {res.is_correct ? (
-                    <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Correct
+          {evaluatedResult.results.map((res, index) => {
+            const cleanSourceTitle = (res.source_material_title || '')
+              .replace(/\.[^/.]+$/, '')
+              .replace(/[_-]/g, ' ');
+
+            return (
+              <div
+                key={res.question_id || index}
+                className={`p-6 rounded-2xl border space-y-4 transition-all ${
+                  res.is_correct
+                    ? 'bg-slate-900/60 border-emerald-500/30'
+                    : 'bg-slate-900/60 border-rose-500/30'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {res.is_correct ? (
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Correct
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-rose-400 bg-rose-500/10 px-2.5 py-1 rounded-full border border-rose-500/20">
+                        <XCircle className="w-3.5 h-3.5" />
+                        Incorrect
+                      </span>
+                    )}
+                    <span className="text-xs text-slate-400 font-medium">
+                      Question {index + 1}
                     </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5 text-xs font-bold text-rose-400 bg-rose-500/10 px-2.5 py-1 rounded-full border border-rose-500/20">
-                      <XCircle className="w-3.5 h-3.5" />
-                      Incorrect
-                    </span>
-                  )}
-                  <span className="text-xs text-slate-400 font-medium">
-                    Question {index + 1}
-                  </span>
+                  </div>
                 </div>
+
+                <p className="text-sm font-semibold text-white leading-relaxed">
+                  {res.question_text}
+                </p>
+
+                {/* Answers Comparison */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
+                    <div className="text-[11px] font-semibold text-slate-400 mb-1">Your Answer:</div>
+                    <div className={`font-medium ${res.is_correct ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {res.user_answer || '(No answer provided)'}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
+                    <div className="text-[11px] font-semibold text-slate-400 mb-1">Correct Answer:</div>
+                    <div className="font-medium text-emerald-300">
+                      {res.correct_answer}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Explanation */}
+                {res.explanation && (
+                  <div className="p-3.5 rounded-xl bg-slate-800/40 border border-slate-800 text-xs text-slate-300 leading-relaxed flex items-start gap-2.5">
+                    <HelpCircle className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-semibold text-indigo-300">Explanation: </span>
+                      {res.explanation}
+                    </div>
+                  </div>
+                )}
+
+                {/* Source Grounding Citation */}
+                {(res.source_material_title || res.source_chunk_text) && (
+                  <div className="p-3 rounded-xl bg-indigo-950/20 border border-indigo-500/20 text-xs space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-semibold text-indigo-400">
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>Reference Material: {cleanSourceTitle || 'Project Study Guide'}</span>
+                    </div>
+                    {res.source_chunk_text && (
+                      <p className="text-slate-400 italic text-[11px] leading-relaxed pl-5 border-l-2 border-indigo-500/30">
+                        "{res.source_chunk_text.slice(0, 240)}..."
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
-
-              <p className="text-sm font-semibold text-white leading-relaxed">
-                {res.question_text}
-              </p>
-
-              {/* Answers Comparison */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
-                  <div className="text-[11px] font-semibold text-slate-400 mb-1">Your Answer:</div>
-                  <div className={`font-medium ${res.is_correct ? 'text-emerald-300' : 'text-rose-300'}`}>
-                    {res.user_answer || '(No answer provided)'}
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
-                  <div className="text-[11px] font-semibold text-slate-400 mb-1">Correct Answer:</div>
-                  <div className="font-medium text-emerald-300">
-                    {res.correct_answer}
-                  </div>
-                </div>
-              </div>
-
-              {/* Explanation */}
-              {res.explanation && (
-                <div className="p-3.5 rounded-xl bg-slate-800/40 border border-slate-800 text-xs text-slate-300 leading-relaxed flex items-start gap-2.5">
-                  <HelpCircle className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-semibold text-indigo-300">Explanation: </span>
-                    {res.explanation}
-                  </div>
-                </div>
-              )}
-
-              {/* Source Grounding Citation */}
-              {(res.source_material_title || res.source_chunk_text) && (
-                <div className="p-3 rounded-xl bg-indigo-950/20 border border-indigo-500/20 text-xs space-y-1.5">
-                  <div className="flex items-center gap-1.5 font-semibold text-indigo-400">
-                    <BookOpen className="w-3.5 h-3.5" />
-                    <span>Grounded in Source: {res.source_material_title || 'Project Study Material'}</span>
-                  </div>
-                  {res.source_chunk_text && (
-                    <p className="text-slate-400 italic text-[11px] leading-relaxed pl-5 border-l-2 border-indigo-500/30">
-                      "{res.source_chunk_text}..."
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );

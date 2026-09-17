@@ -63,29 +63,44 @@ export const Analytics: React.FC = () => {
       case 'quiz_completed':
       case 'quiz_attempt_completed':
         return {
-          title: 'Adaptive Assessment Completed',
-          description: d.score !== undefined ? `Completed assessment with score ${Math.round(d.score)}%` : 'Completed quiz attempt',
+          title: 'Completed a Quiz',
+          description: d.score !== undefined ? `Scored ${Math.round(d.score)}% on quiz` : 'Completed quiz attempt',
           icon: Award,
           color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
         };
-      case 'tutor_interacted':
+      case 'quiz_started':
         return {
-          title: 'AI Tutor Interaction',
-          description: d.query ? `Asked: "${d.query}"` : 'Consulted AI tutor for grounded material guidance',
+          title: 'Started a Quiz',
+          description: d.quiz_title ? `Started "${d.quiz_title}"` : 'Started an adaptive knowledge check',
+          icon: CheckCircle2,
+          color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
+        };
+      case 'quiz_generated':
+        return {
+          title: 'Generated Adaptive Quiz',
+          description: d.question_count ? `Created quiz with ${d.question_count} questions` : 'Generated new assessment',
+          icon: Sparkles,
+          color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
+        };
+      case 'tutor_interacted':
+      case 'tutor_question_asked':
+        return {
+          title: 'Asked AI Tutor a Question',
+          description: d.query ? `"${d.query}"` : 'Consulted AI tutor for grounded study material guidance',
           icon: Bot,
           color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
         };
       case 'material_uploaded':
         return {
-          title: 'Study Material Processed',
-          description: d.title ? `Uploaded "${d.title}"` : 'Processed and embedded document into vector index',
+          title: 'Added Study Material',
+          description: d.title ? `Uploaded "${d.title}"` : 'Processed and added study notes',
           icon: FileText,
           color: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
         };
       case 'project_created':
         return {
-          title: 'Learning Project Initialized',
-          description: d.name ? `Created project "${d.name}"` : 'Initialized new project workspace',
+          title: 'Created Project Workspace',
+          description: d.name ? `Created project "${d.name}"` : 'Initialized new study project',
           icon: FolderKanban,
           color: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
         };
@@ -113,8 +128,8 @@ export const Analytics: React.FC = () => {
     }
   };
 
-  const tutorInteractions = activities.filter((a) => a.event_type === 'tutor_interacted').length;
-  const quizzesCompleted = activities.filter((a) => a.event_type === 'quiz_completed').length;
+  const tutorInteractions = activities.filter((a) => a.event_type === 'tutor_interacted' || a.event_type === 'tutor_question_asked').length;
+  const quizzesCompleted = activities.filter((a) => a.event_type === 'quiz_completed' || a.event_type === 'quiz_attempt_completed').length;
 
   return (
     <div className="space-y-6">
@@ -129,10 +144,10 @@ export const Analytics: React.FC = () => {
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-slate-900/60 border border-slate-800">
         <div>
-          <div className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Telemetry & Events</div>
+          <div className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Learning History</div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Learning Analytics</h1>
           <p className="text-xs text-slate-400">
-            Activity stream and learning velocity for {projectName || `Project: ${projectId || 'default'}`}
+            Activity stream and learning history for {projectName || 'Current Project Workspace'}
           </p>
         </div>
       </div>
@@ -147,9 +162,9 @@ export const Analytics: React.FC = () => {
       {/* Summary Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-          <div className="text-xs font-semibold text-slate-400 uppercase">Learning Events</div>
+          <div className="text-xs font-semibold text-slate-400 uppercase">Total Study Actions</div>
           <div className="text-2xl font-bold text-white">{activities.length}</div>
-          <div className="text-xs text-slate-400">Recorded telemetry intervals</div>
+          <div className="text-xs text-slate-400">Total study events logged</div>
         </div>
 
         <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
@@ -159,9 +174,9 @@ export const Analytics: React.FC = () => {
         </div>
 
         <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-          <div className="text-xs font-semibold text-slate-400 uppercase">AI Tutor Invocations</div>
+          <div className="text-xs font-semibold text-slate-400 uppercase">AI Tutor Consultations</div>
           <div className="text-2xl font-bold text-white">{tutorInteractions}</div>
-          <div className="text-xs text-indigo-400 font-medium">Grounded RAG queries</div>
+          <div className="text-xs text-indigo-400 font-medium">Interactive study questions</div>
         </div>
       </div>
 

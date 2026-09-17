@@ -101,6 +101,7 @@ class RetrievalService:
                     "similarity_score": 0.95,  # approximate fallback for raw distance
                     "material_title": m_title,
                     "chunk_index": chunk.chunk_index,
+                    "page_number": chunk.page_number,
                 })
         else:
             # Python-based similarity for SQLite / test environments
@@ -119,6 +120,7 @@ class RetrievalService:
                     "similarity_score": round(sim, 4),
                     "material_title": m_title,
                     "chunk_index": chunk.chunk_index,
+                    "page_number": chunk.page_number,
                 })
 
         return results

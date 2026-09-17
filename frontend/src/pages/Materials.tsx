@@ -70,19 +70,34 @@ export const Materials: React.FC = () => {
     fetchMaterials();
   }, [projectId]);
 
+  const formatErrorMessage = (rawError: string | null): string => {
+    if (!rawError) return 'An unexpected error occurred. Please try again.';
+    const lower = rawError.toLowerCase();
+    if (lower.includes('422') || lower.includes('unprocessable')) {
+      return 'Please upload a supported PDF or text file (.pdf, .txt, .md).';
+    }
+    if (lower.includes('413') || lower.includes('payload') || lower.includes('too large')) {
+      return 'File exceeds the 15MB limit. Please select a smaller document.';
+    }
+    if (lower.includes('500') || lower.includes('internal server')) {
+      return 'Something went wrong while processing this document. Please try again.';
+    }
+    return rawError;
+  };
+
   const handleFileUpload = async (file: File) => {
     if (!projectId) return;
     setUploadError(null);
 
     // Validate size (15MB)
     if (file.size > 15 * 1024 * 1024) {
-      setUploadError('File size exceeds 15MB limit.');
+      setUploadError('File size exceeds the 15MB limit. Please select a smaller document.');
       return;
     }
 
     const formData = new FormData();
     formData.append('project_id', projectId);
-    formData.append('title', file.name.replace(/\.[^/.]+$/, ''));
+    formData.append('title', file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' '));
     formData.append('file', file);
 
     try {
@@ -90,7 +105,7 @@ export const Materials: React.FC = () => {
       await api.uploadMaterial(formData);
       await fetchMaterials();
     } catch (err: any) {
-      setUploadError(err.message || 'Failed to upload document');
+      setUploadError(formatErrorMessage(err.message));
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) {
@@ -130,7 +145,7 @@ export const Materials: React.FC = () => {
       setIsTextModalOpen(false);
       await fetchMaterials();
     } catch (err: any) {
-      setTextModalError(err.message || 'Failed to create text note');
+      setTextModalError(formatErrorMessage(err.message));
     } finally {
       setSubmittingText(false);
     }
@@ -139,7 +154,7 @@ export const Materials: React.FC = () => {
   const handleDeleteMaterial = async (e: React.MouseEvent, materialId: string, title: string) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!window.confirm(`Are you sure you want to delete material "${title}"?`)) {
+    if (!window.confirm(`Are you sure you want to delete "${title}"?`)) {
       return;
     }
 
@@ -150,12 +165,12 @@ export const Materials: React.FC = () => {
       }
       await fetchMaterials();
     } catch (err: any) {
-      alert(err.message || 'Failed to delete material');
+      alert(formatErrorMessage(err.message));
     }
   };
 
   const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 B';
+    if (!bytes || bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -167,7 +182,7 @@ export const Materials: React.FC = () => {
       case 'ready':
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Ready for AI Tutor
+            <CheckCircle2 className="w-3.5 h-3.5" /> Ready for Learning
           </span>
         );
       case 'processing':
@@ -175,13 +190,13 @@ export const Materials: React.FC = () => {
       case 'uploaded':
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-            <Clock className="w-3.5 h-3.5" /> Text Extracted
+            <Clock className="w-3.5 h-3.5 animate-spin" /> Processing Vectors
           </span>
         );
       default:
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
-            <AlertTriangle className="w-3.5 h-3.5" /> Extraction Error
+            <AlertTriangle className="w-3.5 h-3.5" /> Processing Failed
           </span>
         );
     }
@@ -194,11 +209,11 @@ export const Materials: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Link to={`/projects/${projectId}`} className="text-xs text-slate-400 hover:text-white transition-colors flex items-center gap-1">
-              <ArrowLeft className="w-3.5 h-3.5" /> Project Dashboard
+              <ArrowLeft className="w-3.5 h-3.5" /> Project Workspace
             </Link>
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Learning Materials</h1>
-          <p className="text-xs text-slate-400">PDF documents, notes, and reference material for this project</p>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Study Materials</h1>
+          <p className="text-xs text-slate-400">Add course notes and PDFs to ground your AI Tutor and adaptive quizzes</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -207,14 +222,14 @@ export const Materials: React.FC = () => {
             className="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl border border-slate-700 transition-colors shadow-sm"
           >
             <Plus className="w-4 h-4" />
-            Add Text Note
+            Add Text Notes
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors shadow-sm"
           >
             <Upload className="w-4 h-4" />
-            Upload File
+            Upload PDF
           </button>
           <input
             type="file"
@@ -305,39 +320,47 @@ export const Materials: React.FC = () => {
                 onClick={() => setSelectedMaterial(mat)}
                 className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-indigo-500/40 hover:bg-slate-900 transition-all cursor-pointer group"
               >
-                <div className="flex items-start gap-3.5">
+                <div className="flex items-start gap-3.5 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-indigo-400 shrink-0 font-semibold text-xs">
                     {mat.material_type === 'text' ? <BookOpen className="w-5 h-5 text-indigo-400" /> : <FileText className="w-5 h-5 text-indigo-400" />}
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white group-hover:text-indigo-300 transition-colors">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-white group-hover:text-indigo-300 transition-colors truncate">
                       {mat.title}
                     </h3>
-                    <div className="flex items-center gap-3 text-xs text-slate-400 mt-0.5">
-                      <span className="capitalize">{mat.material_type}</span>
-                      {mat.file_name && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1">
+                      <span className="px-2 py-0.5 rounded-full bg-slate-800 text-[11px] font-medium text-slate-300 border border-slate-700">
+                        {mat.material_type === 'text' ? 'Study Note' : 'PDF Document'}
+                      </span>
+                      {mat.file_size > 0 && (
                         <>
                           <span>•</span>
-                          <span>{mat.file_name}</span>
+                          <span>{formatFileSize(mat.file_size)}</span>
                         </>
                       )}
                       <span>•</span>
-                      <span>{formatFileSize(mat.file_size)}</span>
-                      <span>•</span>
-                      <span>{new Date(mat.created_at).toLocaleDateString()}</span>
+                      <span>{new Date(mat.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 self-end sm:self-center">
+                <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-center shrink-0">
                   {getStatusBadge(mat.status)}
+                  <Link
+                    to={`/projects/${projectId}/tutor`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="p-1.5 text-slate-400 hover:text-indigo-300 hover:bg-indigo-600/10 rounded-lg transition-colors"
+                    title="Ask AI Tutor about this"
+                  >
+                    <BookOpen className="w-4 h-4" />
+                  </Link>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedMaterial(mat);
                     }}
                     className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-                    title="View Material Preview"
+                    title="View Document Excerpts"
                   >
                     <Eye className="w-4 h-4" />
                   </button>

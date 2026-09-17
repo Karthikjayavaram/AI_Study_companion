@@ -181,7 +181,7 @@ export const ProjectDashboard: React.FC = () => {
         };
       case 'material_processed':
         return {
-          text: d.chunks_created ? `Processed material into ${d.chunks_created} concept chunks` : 'Processed material notes',
+          text: 'Indexed and extracted study concepts',
           icon: FileText,
           color: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
         };

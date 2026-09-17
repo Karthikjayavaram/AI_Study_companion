@@ -170,20 +170,37 @@ class QuizService:
                 detail="Not enough study material is available to generate a grounded quiz. Please process study materials first.",
             )
 
-        # Map chunks and sample up to 10 chunks for question generation
-        mat_map = {m.id: m for m in materials}
+        # Map chunks and sample up to 12 chunks for question generation.
+        # Extract all needed data as plain Python values NOW (before LLM call)
+        # so we can release the DB connection during the external HTTP request.
+        mat_map_titles = {m.id: m.title for m in materials}  # plain str, not ORM obj
         sampled_chunks = chunks[:12] if len(chunks) > 12 else chunks
 
+        # Snapshot chunk data as plain dicts — ORM objects will be expunged below
+        chunk_snapshots = [
+            {
+                "id": c.id,
+                "material_id": c.material_id,
+                "chunk_index": c.chunk_index,
+                "content": c.content,
+            }
+            for c in sampled_chunks
+        ]
+        valid_chunk_ids_set = {c["id"] for c in chunk_snapshots}
+        first_chunk_snap = chunk_snapshots[0]
+
         context_blocks = []
-        for c in sampled_chunks:
-            mat_title = mat_map.get(c.material_id).title if mat_map.get(c.material_id) else "Study Material"
+        for c in chunk_snapshots:
+            mat_title = mat_map_titles.get(c["material_id"]) or "Study Material"
             context_blocks.append(
-                f"[CHUNK ID: {c.id} | Material: {mat_title} | Chunk #{c.chunk_index}]\n{c.content}"
+                f"[CHUNK ID: {c['id']} | Material: {mat_title} | Chunk #{c['chunk_index']}]\n{c['content']}"
             )
         formatted_context = "\n\n---\n\n".join(context_blocks)
 
         desired_count = min(max(request.question_count, 1), 20)
         quiz_title = request.title or f"{project.name} - {target_difficulty.capitalize()} Quiz"
+        project_id_val = project.id  # capture before expunge
+        project_name_val = project.name
 
         # 3. LLM Prompt Construction with Anti-Injection Boundary
         system_prompt = (
@@ -222,6 +239,20 @@ class QuizService:
             f"STUDY MATERIAL CONTEXT:\n{formatted_context}"
         )
 
+        # ----------------------------------------------------------------
+        # RELEASE DB CONNECTION BEFORE EXTERNAL LLM CALL
+        # The implicit transaction opened by the above queries holds a
+        # checked-out connection in the pool. db.reset() (SQLAlchemy 2.0)
+        # rolls back the open transaction, expunges all ORM objects, and
+        # returns the connection to the pool — without closing the session.
+        # The session is then in a clean initial state and will re-acquire
+        # a fresh, pool_pre_ping-verified connection when db.add() is
+        # called after the LLM returns. This prevents OperationalError
+        # caused by Supabase silently closing idle connections during the
+        # 20-40s HF inference window.
+        # ----------------------------------------------------------------
+        db.reset()
+
         llm_result = None
         parsed_data = None
 
@@ -246,17 +277,14 @@ class QuizService:
             parsed_data = None
 
         # Fallback generator if LLM was unavailable, mock stub was returned, or parsing failed
-        valid_chunk_ids = {c.id: c for c in sampled_chunks}
-        first_chunk = sampled_chunks[0]
-
+        # Uses chunk_snapshots (plain dicts) since ORM objects were expunged above.
         if not parsed_data or not isinstance(parsed_data.get("questions"), list) or len(parsed_data["questions"]) == 0:
             logger.info("Using deterministic grounded question generator fallback from material chunks.")
             generated_questions = []
             for i in range(desired_count):
-                c = sampled_chunks[i % len(sampled_chunks)]
-                c_mat = mat_map.get(c.material_id)
-                mat_name = c_mat.title if c_mat else "Study Material"
-                snippet = c.content[:80].strip().replace("\n", " ")
+                c = chunk_snapshots[i % len(chunk_snapshots)]
+                mat_name = mat_map_titles.get(c["material_id"]) or "Study Material"
+                snippet = c["content"][:80].strip().replace("\n", " ")
 
                 generated_questions.append({
                     "question_text": f"According to '{mat_name}', which of the following is accurate regarding: \"{snippet}...\"?",
@@ -267,13 +295,13 @@ class QuizService:
                         "None of the provided concepts apply",
                     ],
                     "correct_answer": f"It relates directly to key concepts in {mat_name}",
-                    "explanation": f"This statement is derived directly from {mat_name} (Chunk #{c.chunk_index}).",
+                    "explanation": f"This statement is derived directly from {mat_name} (Chunk #{c['chunk_index']}).",
                     "difficulty": target_difficulty,
-                    "source_chunk_id": c.id,
+                    "source_chunk_id": c["id"],
                 })
             parsed_data = {
                 "quiz_title": quiz_title,
-                "quiz_description": f"Generated quiz covering {len(materials)} material(s) at {target_difficulty} difficulty.",
+                "quiz_description": f"Generated quiz covering {len(mat_map_titles)} material(s) at {target_difficulty} difficulty.",
                 "questions": generated_questions,
             }
 
@@ -286,8 +314,12 @@ class QuizService:
             )
 
         # 5. Persist Quiz Record
+        # The session was expunged before the LLM call (above). The connection
+        # was returned to the pool during the HF request. db.add() now triggers
+        # a fresh connection checkout from the pool; pool_pre_ping=True ensures
+        # any stale connection is discarded before use.
         db_quiz = Quiz(
-            project_id=project.id,
+            project_id=project_id_val,
             user_id=user.id,
             title=parsed_data.get("quiz_title", quiz_title)[:255],
             description=parsed_data.get("quiz_description", f"Grounded quiz on {project.name}")[:500],
@@ -316,17 +348,16 @@ class QuizService:
                 correct_ans = matched
 
             chunk_id = q_data.get("source_chunk_id")
-            if chunk_id not in valid_chunk_ids:
-                chunk_id = first_chunk.id
-            chunk_obj = valid_chunk_ids.get(chunk_id, first_chunk)
+            if chunk_id not in valid_chunk_ids_set:
+                chunk_id = first_chunk_snap["id"]
+            chunk_snap = next((c for c in chunk_snapshots if c["id"] == chunk_id), first_chunk_snap)
 
-            mat_entry = mat_map.get(chunk_obj.material_id)
-            mat_title_ref = mat_entry.title if mat_entry else "study materials"
+            mat_title_ref = mat_map_titles.get(chunk_snap["material_id"]) or "study materials"
 
             db_q = Question(
                 quiz_id=db_quiz.id,
-                source_material_id=chunk_obj.material_id,
-                source_chunk_id=chunk_obj.id,
+                source_material_id=chunk_snap["material_id"],
+                source_chunk_id=chunk_snap["id"],
                 question_order=idx,
                 question_text=q_text,
                 question_type="mcq",
@@ -366,9 +397,9 @@ class QuizService:
                     db_q.concept_id = existing.id
                 else:
                     new_concept = Concept(
-                        project_id=project.id,
+                        project_id=project_id_val,
                         name=raw_concept,
-                        description=f"Concept extracted from quiz: {quiz_title}",
+                        description=f"Concept extracted from quiz: {quiz_title[:200]}",
                         category=None,
                     )
                     db.add(new_concept)
@@ -383,7 +414,7 @@ class QuizService:
         try:
             event = ActivityEvent(
                 user_id=user.id,
-                project_id=project.id,
+                project_id=project_id_val,
                 event_type="quiz_generated",
                 details={
                     "quiz_id": db_quiz.id,
@@ -396,7 +427,7 @@ class QuizService:
             if llm_result and getattr(llm_result, "total_tokens", 0) > 0:
                 ai_usage = AIUsage(
                     user_id=user.id,
-                    project_id=project.id,
+                    project_id=project_id_val,
                     feature="quiz",
                     model=llm_result.model or settings.HF_CHAT_MODEL,
                     prompt_tokens=llm_result.prompt_tokens,

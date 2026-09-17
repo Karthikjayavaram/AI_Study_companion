@@ -55,6 +55,27 @@ export const Admin: React.FC = () => {
         </span>
       </div>
 
+      {/* Active AI Stack Overview */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
+          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">AI Chat Model</div>
+          <div className="text-sm font-bold text-white font-mono truncate">meta-llama/Llama-3.1-8B-Instruct</div>
+          <div className="text-xs text-indigo-400">Provider: Hugging Face</div>
+        </div>
+
+        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
+          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Embeddings & Vector Store</div>
+          <div className="text-sm font-bold text-white font-mono truncate">BAAI/bge-small-en-v1.5 (384d)</div>
+          <div className="text-xs text-emerald-400">Store: Supabase pgvector</div>
+        </div>
+
+        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
+          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Observability & Tracing</div>
+          <div className="text-sm font-bold text-white font-mono truncate">LangSmith Traced</div>
+          <div className="text-xs text-purple-400">End-to-End Run Monitoring</div>
+        </div>
+      </div>
+
       {/* Platform Overview Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
@@ -77,7 +98,10 @@ export const Admin: React.FC = () => {
       <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-white uppercase tracking-wider">AI Observability & Cost Tracking</h2>
-          <span className="text-xs text-slate-400">PRD Section 14 Spec</span>
+          <span className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            LangSmith Tracing Active
+          </span>
         </div>
 
         <div className="overflow-x-auto">

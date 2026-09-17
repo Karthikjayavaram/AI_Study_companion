@@ -37,11 +37,12 @@ export const Login: React.FC = () => {
     <div className="min-h-[80vh] flex items-center justify-center">
       <div className="w-full max-w-md p-8 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl space-y-6">
         <div className="text-center space-y-2">
-          <div className="inline-flex w-12 h-12 rounded-2xl bg-indigo-600/20 text-indigo-400 items-center justify-center mb-2">
+          <div className="inline-flex w-12 h-12 rounded-2xl bg-indigo-600/20 text-indigo-400 items-center justify-center mb-1">
             <BookOpen className="w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Sign In</h2>
-          <p className="text-xs text-slate-400">Access your persistent learning workspace</p>
+          <div className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">AI Study Companion</div>
+          <h2 className="text-2xl font-extrabold text-white tracking-tight">Sign In</h2>
+          <p className="text-xs text-slate-400">Your AI-powered learning workspace</p>
         </div>
 
         {error && (
