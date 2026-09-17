@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Sparkles,
@@ -9,9 +9,56 @@ import {
   BookOpen,
   Brain,
   CheckCircle2,
+  Plus,
 } from 'lucide-react';
+import { api, NextActionResponse, GrowthSummary } from '../api/client';
+
+interface ProjectItem {
+  id: string;
+  name: string;
+  description?: string;
+  created_at: string;
+}
 
 export const Home: React.FC = () => {
+  const [recentProject, setRecentProject] = useState<ProjectItem | null>(null);
+  const [recommendation, setRecommendation] = useState<NextActionResponse | null>(null);
+  const [growthSummary, setGrowthSummary] = useState<GrowthSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        setLoading(true);
+        const projectsRes = await api.getProjects().catch(() => ({ data: [] }));
+        const projects: ProjectItem[] = projectsRes.data || [];
+
+        if (projects.length > 0) {
+          const project = projects[0];
+          setRecentProject(project);
+
+          const [recRes, growthRes] = await Promise.all([
+            api.getNextRecommendation(project.id).catch(() => ({ data: null })),
+            api.getGrowthSummary(project.id).catch(() => ({ data: null })),
+          ]);
+
+          if (recRes?.data) setRecommendation(recRes.data);
+          if (growthRes?.data) setGrowthSummary(growthRes.data);
+        }
+      } catch {
+        // Fallback gracefully
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDashboardData();
+  }, []);
+
+  const continueLearningUrl = recentProject
+    ? `/projects/${recentProject.id}/tutor`
+    : '/spaces';
+
   return (
     <div className="space-y-8">
       {/* Top Banner / Welcome */}
@@ -29,11 +76,11 @@ export const Home: React.FC = () => {
           </p>
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <Link
-              to="/projects/demo/tutor"
+              to={continueLearningUrl}
               className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/30 hover:shadow-indigo-600/50"
             >
               <Brain className="w-4 h-4" />
-              Continue Learning
+              {recentProject ? 'Continue Learning' : 'Get Started'}
               <ArrowRight className="w-4 h-4" />
             </Link>
             <Link
@@ -50,57 +97,139 @@ export const Home: React.FC = () => {
       {/* Answers: Where was I? How am I doing? What should I do next? */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Card 1: Where was I? */}
-        <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4 hover:border-slate-700 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Where was I</span>
-            <BookOpen className="w-4 h-4 text-indigo-400" />
+        <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4 hover:border-slate-700 transition-all flex flex-col justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Where was I</span>
+              <BookOpen className="w-4 h-4 text-indigo-400" />
+            </div>
+            {recentProject ? (
+              <>
+                <h3 className="text-lg font-bold text-white">{recentProject.name}</h3>
+                <p className="text-xs text-slate-400 line-clamp-2">
+                  {recentProject.description || 'Active learning project with personalized knowledge graph and AI tutor.'}
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-bold text-white">No Active Projects Yet</h3>
+                <p className="text-xs text-slate-400">
+                  Create a learning space to organize materials and begin your study journey.
+                </p>
+              </>
+            )}
           </div>
-          <h3 className="text-lg font-bold text-white">Machine Learning Foundations</h3>
-          <p className="text-xs text-slate-400">
-            Last active in Chapter 3: Gradient Descent & Loss Optimization. 2 documents processed.
-          </p>
-          <Link
-            to="/projects/demo"
-            className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1.5"
-          >
-            Resume Project <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
+          <div className="pt-2">
+            <Link
+              to={recentProject ? `/projects/${recentProject.id}` : '/spaces'}
+              className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1.5"
+            >
+              {recentProject ? 'Resume Project' : 'Create Space'} <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
         </div>
 
         {/* Card 2: How am I doing? */}
-        <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4 hover:border-slate-700 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">How am I doing</span>
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
+        <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4 hover:border-slate-700 transition-all flex flex-col justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">How am I doing</span>
+              <TrendingUp className="w-4 h-4 text-emerald-400" />
+            </div>
+            {growthSummary && growthSummary.total_concepts > 0 ? (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-extrabold text-white">
+                    {Math.round(growthSummary.overall_mastery)}%
+                  </span>
+                  <span className="text-xs text-emerald-400 font-medium">
+                    {growthSummary.mastered_count + growthSummary.improving_count} progressing
+                  </span>
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-2">
+                  <div
+                    className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(100, Math.round(growthSummary.overall_mastery))}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-slate-400">
+                  {growthSummary.improving_count} concepts improving, {growthSummary.needs_attention_count} requiring attention.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-extrabold text-white">--</span>
+                  <span className="text-xs text-slate-400 font-medium">Ready to begin</span>
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-2">
+                  <div className="bg-slate-700 h-2 rounded-full w-0"></div>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Complete adaptive quizzes and study sessions to calculate your mastery score.
+                </p>
+              </>
+            )}
           </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-white">74%</span>
-            <span className="text-xs text-emerald-400 font-medium">+8% this week</span>
+          <div className="pt-2">
+            {recentProject ? (
+              <Link
+                to={`/projects/${recentProject.id}/growth`}
+                className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 inline-flex items-center gap-1.5"
+              >
+                View Growth Analytics <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            ) : (
+              <span className="text-xs text-slate-500">Awaiting quiz data</span>
+            )}
           </div>
-          <div className="w-full bg-slate-800 rounded-full h-2">
-            <div className="bg-emerald-500 h-2 rounded-full w-3/4"></div>
-          </div>
-          <p className="text-xs text-slate-400">
-            3 concepts improving, 1 concept requires attention.
-          </p>
         </div>
 
         {/* Card 3: What should I do next? */}
-        <div className="p-6 rounded-2xl bg-slate-900/60 border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 to-slate-900 space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Recommended Next Action</span>
-            <AlertCircle className="w-4 h-4 text-amber-400" />
+        <div className="p-6 rounded-2xl bg-slate-900/60 border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 to-slate-900 space-y-4 flex flex-col justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Recommended Next Action</span>
+              <AlertCircle className="w-4 h-4 text-amber-400" />
+            </div>
+            {recommendation ? (
+              <>
+                <h3 className="text-base font-bold text-white">{recommendation.title}</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {recommendation.reason}
+                </p>
+              </>
+            ) : recentProject ? (
+              <>
+                <h3 className="text-base font-bold text-white">Explore Project Materials</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Upload study documents or engage the AI tutor to extract learning concepts and unlock quizzes.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-base font-bold text-white">Create Your First Space</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Spaces organize your learning materials by subject, domain, or coursework.
+                </p>
+              </>
+            )}
           </div>
-          <h3 className="text-base font-bold text-white">Review Regularization Concepts</h3>
-          <p className="text-xs text-slate-300">
-            Application-based quiz questions on L1/L2 penalties were missed. Take a short 3-question adaptive quiz.
-          </p>
-          <Link
-            to="/projects/demo/quiz"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-300 hover:text-white bg-indigo-600/20 border border-indigo-500/30 px-3 py-1.5 rounded-lg"
-          >
-            Start Adaptive Quiz <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
+          <div className="pt-2">
+            <Link
+              to={
+                recommendation
+                  ? recommendation.action_url
+                  : recentProject
+                  ? `/projects/${recentProject.id}/materials`
+                  : '/spaces'
+              }
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-300 hover:text-white bg-indigo-600/20 border border-indigo-500/30 px-3.5 py-2 rounded-xl transition-colors shadow-sm"
+            >
+              {recommendation ? 'Take Action' : recentProject ? 'Add Materials' : 'Get Started'}
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
         </div>
       </div>
 

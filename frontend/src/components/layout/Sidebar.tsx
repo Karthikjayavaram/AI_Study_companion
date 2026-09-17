@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -13,7 +13,18 @@ import {
 
 export const Sidebar: React.FC = () => {
   const { projectId } = useParams<{ projectId?: string }>();
-  const activeProjectId = projectId || 'default';
+  const [storedProjectId, setStoredProjectId] = useState<string | null>(() => {
+    return localStorage.getItem('last_active_project_id');
+  });
+
+  useEffect(() => {
+    if (projectId && projectId !== 'default') {
+      localStorage.setItem('last_active_project_id', projectId);
+      setStoredProjectId(projectId);
+    }
+  }, [projectId]);
+
+  const activeProjectId = projectId || storedProjectId;
 
   const baseNav = [
     { to: '/', label: 'Overview', icon: LayoutDashboard },
@@ -21,12 +32,37 @@ export const Sidebar: React.FC = () => {
   ];
 
   const projectNav = [
-    { to: `/projects/${activeProjectId}`, label: 'Project Hub', icon: Compass, end: true },
-    { to: `/projects/${activeProjectId}/materials`, label: 'Materials', icon: FileText },
-    { to: `/projects/${activeProjectId}/tutor`, label: 'AI Tutor', icon: Bot },
-    { to: `/projects/${activeProjectId}/quiz`, label: 'Adaptive Quiz', icon: CheckSquare },
-    { to: `/projects/${activeProjectId}/growth`, label: 'Growth & Mastery', icon: TrendingUp },
-    { to: `/projects/${activeProjectId}/analytics`, label: 'Analytics', icon: BarChart3 },
+    {
+      to: activeProjectId ? `/projects/${activeProjectId}` : '/spaces',
+      label: 'Project Hub',
+      icon: Compass,
+      end: true,
+    },
+    {
+      to: activeProjectId ? `/projects/${activeProjectId}/materials` : '/spaces',
+      label: 'Materials',
+      icon: FileText,
+    },
+    {
+      to: activeProjectId ? `/projects/${activeProjectId}/tutor` : '/spaces',
+      label: 'AI Tutor',
+      icon: Bot,
+    },
+    {
+      to: activeProjectId ? `/projects/${activeProjectId}/quiz` : '/spaces',
+      label: 'Adaptive Quiz',
+      icon: CheckSquare,
+    },
+    {
+      to: activeProjectId ? `/projects/${activeProjectId}/growth` : '/spaces',
+      label: 'Growth & Mastery',
+      icon: TrendingUp,
+    },
+    {
+      to: activeProjectId ? `/projects/${activeProjectId}/analytics` : '/spaces',
+      label: 'Analytics',
+      icon: BarChart3,
+    },
   ];
 
   return (
@@ -65,12 +101,12 @@ export const Sidebar: React.FC = () => {
           <nav className="space-y-1">
             {projectNav.map((item) => (
               <NavLink
-                key={item.to}
+                key={item.label}
                 to={item.to}
                 end={item.end}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                    isActive
+                    isActive && activeProjectId
                       ? 'bg-indigo-600/15 text-indigo-400 border border-indigo-500/20'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`
@@ -85,10 +121,20 @@ export const Sidebar: React.FC = () => {
       </div>
 
       <div className="p-3 bg-slate-800/50 border border-slate-800 rounded-xl">
-        <div className="text-xs text-slate-400 mb-1">Active Study Loop</div>
-        <div className="text-xs text-emerald-400 flex items-center gap-1.5 font-medium">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          Context Preserved
+        <div className="text-xs text-slate-400 mb-1">
+          {activeProjectId ? 'Active Study Loop' : 'No Project Selected'}
+        </div>
+        <div
+          className={`text-xs flex items-center gap-1.5 font-medium ${
+            activeProjectId ? 'text-emerald-400' : 'text-slate-500'
+          }`}
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              activeProjectId ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'
+            }`}
+          ></span>
+          {activeProjectId ? 'Context Preserved' : 'Select a Project'}
         </div>
       </div>
     </aside>

@@ -29,6 +29,7 @@ def run_security_audit():
                                     or "dummy" in line
                                     or "mock" in line
                                     or "test_key" in line
+                                    or "test_" in line
                                     or "example" in line
                                     or "abcdefghijklmnopqrstuvwxyz" in line
                                     or "your_" in line

@@ -19,7 +19,7 @@ def test_tracing_disabled_by_default_without_key():
 
 def test_tracing_enabled_with_flag_and_key():
     with patch.object(settings, "LANGCHAIN_TRACING_V2", True), \
-         patch.object(settings, "LANGCHAIN_API_KEY", "lsv2_test_valid_key_12345"):
+         patch.object(settings, "LANGCHAIN_API_KEY", "lsv2_test_key_valid_12345"):
         assert is_tracing_enabled() is True
 
 
