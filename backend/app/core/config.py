@@ -1,12 +1,12 @@
 import os
-from typing import List, Union
-from pydantic import AnyHttpUrl, field_validator
+from typing import List, Optional, Union
+from pydantic import AnyHttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=[".env", "../.env"],
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -33,8 +33,9 @@ class Settings(BaseSettings):
 
     # Hugging Face Configuration (Primary external AI provider)
     HF_API_KEY: str = ""
-    HF_CHAT_MODEL: str = "mistralai/Mistral-7B-Instruct-v0.3"
-    HF_EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    HUGGINGFACEHUB_API_TOKEN: Optional[str] = None
+    HF_CHAT_MODEL: str = "meta-llama/Llama-3.1-8B-Instruct"
+    HF_EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
     EMBEDDING_DIMENSION: int = 384
     HF_TEMPERATURE: float = 0.2
     HF_MAX_TOKENS: int = 1024
@@ -44,17 +45,20 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 50
 
-
-    # Storage
-    STORAGE_BACKEND: str = "local"  # "local" or "s3"
+    # Storage (Deployment target is supabase; local fallback available for dev/tests)
+    STORAGE_BACKEND: str = "supabase"  # "supabase" (production) or "local" (dev/tests)
     LOCAL_STORAGE_DIR: str = "./storage/uploads"
-    S3_BUCKET_NAME: str = "ai-study-companion"
-    S3_REGION: str = "us-east-1"
-    S3_ACCESS_KEY_ID: str = ""
-    S3_SECRET_ACCESS_KEY: str = ""
-    S3_ENDPOINT_URL: str = ""
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_STORAGE_BUCKET: str = "ai-study-companion"
 
-    # Observability
+    # Observability & Tracing (LangSmith / LangChain)
+    LANGCHAIN_TRACING_V2: bool = False
+    LANGCHAIN_ENDPOINT: str = "https://api.smith.langchain.com"
+    LANGCHAIN_API_KEY: str = ""
+    LANGCHAIN_PROJECT: str = "ai-study-companion"
+
+    # Legacy Observability (Optional)
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_HOST: str = "https://cloud.langfuse.com"
@@ -62,6 +66,12 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: Union[str, List[str]] = "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"
+
+    @model_validator(mode="after")
+    def normalize_keys(self) -> "Settings":
+        if not self.HF_API_KEY and self.HUGGINGFACEHUB_API_TOKEN:
+            self.HF_API_KEY = self.HUGGINGFACEHUB_API_TOKEN
+        return self
 
     @field_validator("CORS_ORIGINS", mode="after")
     @classmethod
@@ -72,3 +82,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+

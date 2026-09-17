@@ -104,7 +104,7 @@ The AI subsystem is structured under `backend/app/ai/`:
 
 * A flexible `StorageService` interface (`backend/app/services/storage/`) providing uniform file operations (`upload`, `get`, `delete`, `get_url`).
 * Local filesystem storage provider for frictionless local development.
-* S3-compatible provider for production object storage (AWS S3, MinIO, Cloudflare R2).
+* Supabase Storage provider for production object storage with authenticated access and signed URLs.
 
 ---
 

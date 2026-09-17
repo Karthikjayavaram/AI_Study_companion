@@ -115,6 +115,29 @@ export interface GrowthSummary {
   masteries: ConceptMastery[];
 }
 
+export interface NextActionResponse {
+  id: string;
+  project_id: string;
+  user_id: string;
+  recommendation_type: 'practice_concept' | 'review_concept' | 'mixed_review' | 'start_learning' | string;
+  title: string;
+  reason: string;
+  target_concept_id?: string | null;
+  priority: number;
+  action_type: string;
+  action_url: string;
+  created_at?: string | null;
+}
+
+export interface ActivityEventItem {
+  id: string;
+  user_id: string;
+  project_id?: string | null;
+  event_type: string;
+  details?: Record<string, any> | null;
+  created_at: string;
+}
+
 export const getAuthToken = (): string | null => {
   return localStorage.getItem('study_companion_token');
 };
@@ -223,9 +246,13 @@ export const api = {
   getGrowthSummary: (projectId: string) => apiRequest<GrowthSummary>(`/growth/summary?project_id=${projectId}`),
   getProjectConcepts: (projectId: string) => apiRequest<ConceptItem[]>(`/growth/concepts?project_id=${projectId}`),
   getRecommendations: (projectId: string) => apiRequest(`/growth/recommendations?project_id=${projectId}`),
+  getNextRecommendation: (projectId: string) =>
+    apiRequest<NextActionResponse>(`/projects/${projectId}/recommendations/next`),
 
   // Analytics
   getActivity: (projectId?: string) => apiRequest(`/analytics/activity${projectId ? `?project_id=${projectId}` : ''}`),
+  getProjectActivity: (projectId: string, limit: number = 20) =>
+    apiRequest<ActivityEventItem[]>(`/projects/${projectId}/activity?limit=${limit}`),
 
   // Admin
   getAdminMetrics: () => apiRequest('/admin/metrics'),

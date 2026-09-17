@@ -13,6 +13,9 @@ from app.db.session import Base, engine
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.APP_NAME} in [{settings.APP_ENV}] mode...")
+    from app.core.tracing import init_tracing
+    init_tracing()
+
     # Initialize DB tables for development/testing if using SQLite
     if settings.DATABASE_URL.startswith("sqlite"):
         Base.metadata.create_all(bind=engine)

@@ -73,9 +73,9 @@ def test_huggingface_configuration_defaults():
     assert hasattr(settings, "AI_PROVIDER")
     assert settings.AI_PROVIDER == "huggingface"
     assert hasattr(settings, "HF_CHAT_MODEL")
-    assert "mistral" in settings.HF_CHAT_MODEL.lower() or "huggingface" in settings.HF_CHAT_MODEL.lower()
+    assert "llama" in settings.HF_CHAT_MODEL.lower() or "mistral" in settings.HF_CHAT_MODEL.lower() or "huggingface" in settings.HF_CHAT_MODEL.lower()
     assert hasattr(settings, "HF_EMBEDDING_MODEL")
-    assert "all-minilm" in settings.HF_EMBEDDING_MODEL.lower()
+    assert "bge" in settings.HF_EMBEDDING_MODEL.lower() or "all-minilm" in settings.HF_EMBEDDING_MODEL.lower()
     assert hasattr(settings, "EMBEDDING_DIMENSION")
     assert settings.EMBEDDING_DIMENSION == 384
 

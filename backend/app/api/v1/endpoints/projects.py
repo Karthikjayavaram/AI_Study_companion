@@ -7,6 +7,7 @@ from app.models.space import Space
 from app.models.user import User
 from app.models.activity import ActivityEvent
 from app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
+from app.schemas.activity import ActivityEventRead
 from app.schemas.common import APIResponse
 
 router = APIRouter()
@@ -126,4 +127,46 @@ def delete_project(
     db.delete(project)
     db.commit()
     return APIResponse(data={"id": project_id}, message="Project deleted successfully")
+
+
+@router.get("/{project_id}/activity", response_model=APIResponse[List[ActivityEventRead]])
+def get_project_activity(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    limit: int = 20,
+):
+    """
+    Get recent learning activity events for a specific project.
+    Enforces project ownership via the User -> Space -> Project hierarchy.
+    """
+    project = (
+        db.query(Project)
+        .join(Space, Project.space_id == Space.id)
+        .filter(
+            Project.id == project_id,
+            Project.user_id == current_user.id,
+            Space.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found or unauthorized.",
+        )
+
+    safe_limit = max(1, min(limit, 100))
+    events = (
+        db.query(ActivityEvent)
+        .filter(
+            ActivityEvent.project_id == project.id,
+            ActivityEvent.user_id == current_user.id,
+        )
+        .order_by(ActivityEvent.created_at.desc())
+        .limit(safe_limit)
+        .all()
+    )
+    return APIResponse(data=[ActivityEventRead.model_validate(e) for e in events])
+
 

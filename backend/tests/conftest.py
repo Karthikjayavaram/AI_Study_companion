@@ -14,6 +14,13 @@ from sqlalchemy.pool import StaticPool
 # Set test environment
 os.environ["APP_ENV"] = "testing"
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["STORAGE_BACKEND"] = "local"
+
+from app.core.config import settings
+settings.STORAGE_BACKEND = "local"
+
+from app.services.storage import reset_storage_service
+reset_storage_service()
 
 from app.main import app
 from app.db.session import Base, get_db

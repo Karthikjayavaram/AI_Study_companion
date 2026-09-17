@@ -18,7 +18,7 @@ from app.schemas.assessment import (
     QuestionResultDetail,
     QuizAttemptResultResponse,
 )
-from app.schemas.recommendation import RecommendationRead
+from app.schemas.recommendation import RecommendationRead, NextActionResponse
 from app.schemas.activity import ActivityEventCreate, ActivityEventRead
 from app.schemas.ai_usage import AIUsageRead
 
@@ -64,6 +64,7 @@ __all__ = [
     "QuestionResultDetail",
     "QuizAttemptResultResponse",
     "RecommendationRead",
+    "NextActionResponse",
     "ActivityEventCreate",
     "ActivityEventRead",
     "AIUsageRead",

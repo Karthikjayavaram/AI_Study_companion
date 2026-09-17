@@ -85,64 +85,75 @@ class HuggingFaceChatProvider(ChatProvider):
             "Content-Type": "application/json",
         }
 
-        # Strategy 1: Serverless v1 chat completions router endpoint on Hugging Face
-        v1_url = "https://api-inference.huggingface.co/v1/chat/completions"
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": temp,
-            "max_tokens": tokens,
-        }
+        from app.core.tracing import trace_ai_call
 
-        content = ""
-        prompt_tokens = 0
-        completion_tokens = 0
-        total_tokens = 0
-        returned_model = self.model
+        with trace_ai_call("hf_chat_completion", run_type="llm", inputs={"model": self.model, "prompt_length": len(prompt)}):
+            # Target endpoints: Modern Hugging Face Router endpoint with legacy api-inference fallback
+            v1_url = "https://router.huggingface.co/v1/chat/completions"
+            v1_legacy_url = "https://api-inference.huggingface.co/v1/chat/completions"
+            model_url = f"https://router.huggingface.co/hf-inference/models/{self.model}"
+            model_legacy_url = f"https://api-inference.huggingface.co/models/{self.model}"
 
-        try:
-            with httpx.Client(timeout=self.timeout_seconds) as client:
-                res = client.post(v1_url, headers=headers, json=payload)
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": temp,
+                "max_tokens": tokens,
+            }
 
-                # If v1 endpoint returns 404 or unsupported, fallback to models/{model} endpoint
-                if res.status_code == 404:
-                    model_url = f"https://api-inference.huggingface.co/models/{self.model}"
-                    # Format prompt for model endpoint
-                    full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-                    model_payload = {
-                        "inputs": full_prompt,
-                        "parameters": {
-                            "temperature": max(temp, 0.01),
-                            "max_new_tokens": tokens,
-                            "return_full_text": False,
-                        },
-                        "options": {"wait_for_model": True},
-                    }
-                    res = client.post(model_url, headers=headers, json=model_payload)
+            content = ""
+            prompt_tokens = 0
+            completion_tokens = 0
+            total_tokens = 0
+            returned_model = self.model
 
-                if res.status_code == 401 or res.status_code == 403:
-                    raise AIProviderAuthError(
-                        f"Hugging Face authentication failed (status {res.status_code}). "
-                        "Please verify your HF_API_KEY."
-                    )
-                elif res.status_code >= 400:
+            try:
+                with httpx.Client(timeout=self.timeout_seconds) as client:
                     try:
-                        err_body = res.json()
-                        err_msg = err_body.get("error", res.text)
-                    except Exception:
-                        err_msg = res.text
-                    err_msg = _scrub_secrets(str(err_msg), self.api_key)
-                    raise AIProviderError(f"Hugging Face API error (status {res.status_code}): {err_msg}")
+                        res = client.post(v1_url, headers=headers, json=payload)
+                    except httpx.ConnectError:
+                        res = client.post(v1_legacy_url, headers=headers, json=payload)
 
-                data = res.json()
+                    # If v1 endpoint returns 404 or unsupported, fallback to models/{model} endpoint
+                    if res.status_code == 404:
+                        full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+                        model_payload = {
+                            "inputs": full_prompt,
+                            "parameters": {
+                                "temperature": max(temp, 0.01),
+                                "max_new_tokens": tokens,
+                                "return_full_text": False,
+                            },
+                            "options": {"wait_for_model": True},
+                        }
+                        try:
+                            res = client.post(model_url, headers=headers, json=model_payload)
+                        except httpx.ConnectError:
+                            res = client.post(model_legacy_url, headers=headers, json=model_payload)
 
-        except httpx.TimeoutException as e:
-            raise AIProviderNetworkError(
-                f"Hugging Face request timed out after {self.timeout_seconds}s."
-            ) from e
-        except httpx.RequestError as e:
-            cleaned_err = _scrub_secrets(str(e), self.api_key)
-            raise AIProviderNetworkError(f"Network error connecting to Hugging Face: {cleaned_err}") from e
+                    if res.status_code == 401 or res.status_code == 403:
+                        raise AIProviderAuthError(
+                            f"Hugging Face authentication failed (status {res.status_code}). "
+                            "Please verify your HF_API_KEY."
+                        )
+                    elif res.status_code >= 400:
+                        try:
+                            err_body = res.json()
+                            err_msg = err_body.get("error", res.text)
+                        except Exception:
+                            err_msg = res.text
+                        err_msg = _scrub_secrets(str(err_msg), self.api_key)
+                        raise AIProviderError(f"Hugging Face API error (status {res.status_code}): {err_msg}")
+
+                    data = res.json()
+
+            except httpx.TimeoutException as e:
+                raise AIProviderNetworkError(
+                    f"Hugging Face request timed out after {self.timeout_seconds}s."
+                ) from e
+            except httpx.RequestError as e:
+                cleaned_err = _scrub_secrets(str(e), self.api_key)
+                raise AIProviderNetworkError(f"Network error connecting to Hugging Face: {cleaned_err}") from e
 
         latency_ms = int((time.time() - start_time) * 1000)
 
@@ -224,47 +235,54 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
 
         self._ensure_configured()
 
-        url = f"https://api-inference.huggingface.co/models/{self.model}"
-        headers = {
-            "Authorization": f"Bearer {self.api_key.strip()}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "inputs": texts,
-            "options": {"wait_for_model": True},
-        }
+        from app.core.tracing import trace_ai_call
 
-        try:
-            with httpx.Client(timeout=self.timeout_seconds) as client:
-                res = client.post(url, headers=headers, json=payload)
+        with trace_ai_call("hf_embedding", run_type="embedding", inputs={"model": self.model, "batch_size": len(texts)}):
+            url = f"https://router.huggingface.co/hf-inference/models/{self.model}"
+            legacy_url = f"https://api-inference.huggingface.co/models/{self.model}"
+            headers = {
+                "Authorization": f"Bearer {self.api_key.strip()}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "inputs": texts,
+                "options": {"wait_for_model": True},
+            }
 
-                if res.status_code == 401 or res.status_code == 403:
-                    raise AIProviderAuthError(
-                        f"Hugging Face embedding authentication failed (status {res.status_code}). "
-                        "Please verify your HF_API_KEY."
-                    )
-                elif res.status_code >= 400:
+            try:
+                with httpx.Client(timeout=self.timeout_seconds) as client:
                     try:
-                        err_body = res.json()
-                        err_msg = err_body.get("error", res.text)
-                    except Exception:
-                        err_msg = res.text
-                    err_msg = _scrub_secrets(str(err_msg), self.api_key)
-                    raise AIProviderError(
-                        f"Hugging Face embedding API error (status {res.status_code}): {err_msg}"
-                    )
+                        res = client.post(url, headers=headers, json=payload)
+                    except httpx.ConnectError:
+                        res = client.post(legacy_url, headers=headers, json=payload)
 
-                data = res.json()
+                    if res.status_code == 401 or res.status_code == 403:
+                        raise AIProviderAuthError(
+                            f"Hugging Face embedding authentication failed (status {res.status_code}). "
+                            "Please verify your HF_API_KEY."
+                        )
+                    elif res.status_code >= 400:
+                        try:
+                            err_body = res.json()
+                            err_msg = err_body.get("error", res.text)
+                        except Exception:
+                            err_msg = res.text
+                        err_msg = _scrub_secrets(str(err_msg), self.api_key)
+                        raise AIProviderError(
+                            f"Hugging Face embedding API error (status {res.status_code}): {err_msg}"
+                        )
 
-        except httpx.TimeoutException as e:
-            raise AIProviderNetworkError(
-                f"Hugging Face embedding request timed out after {self.timeout_seconds}s."
-            ) from e
-        except httpx.RequestError as e:
-            cleaned_err = _scrub_secrets(str(e), self.api_key)
-            raise AIProviderNetworkError(
-                f"Network error connecting to Hugging Face embedding API: {cleaned_err}"
-            ) from e
+                    data = res.json()
+
+            except httpx.TimeoutException as e:
+                raise AIProviderNetworkError(
+                    f"Hugging Face embedding request timed out after {self.timeout_seconds}s."
+                ) from e
+            except httpx.RequestError as e:
+                cleaned_err = _scrub_secrets(str(e), self.api_key)
+                raise AIProviderNetworkError(
+                    f"Network error connecting to Hugging Face embedding API: {cleaned_err}"
+                ) from e
 
         # Normalize and validate raw output
         raw_vectors: List[List[float]] = []

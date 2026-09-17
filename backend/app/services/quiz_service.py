@@ -447,6 +447,24 @@ class QuizService:
         db.commit()
         db.refresh(attempt)
 
+        # Record activity event
+        try:
+            event = ActivityEvent(
+                user_id=user.id,
+                project_id=quiz.project_id,
+                event_type="quiz_started",
+                details={
+                    "quiz_id": quiz.id,
+                    "attempt_id": attempt.id,
+                    "quiz_title": quiz.title,
+                    "question_count": len(quiz.questions),
+                },
+            )
+            db.add(event)
+            db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to record quiz start telemetry: {e}")
+
         sanitized_questions = [
             QuestionSanitizedRead(
                 id=q.id,

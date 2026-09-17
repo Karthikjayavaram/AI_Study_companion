@@ -53,10 +53,10 @@ The system continuously answers three questions for the learner:
 | **Frontend** | React 18, Vite, TypeScript, React Router v6, Tailwind CSS, Lucide Icons |
 | **Backend** | Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2.0, Alembic |
 | **Database** | PostgreSQL 16+ with `pgvector` extension (with SQLite test fallback) |
-| **AI Layer** | Hugging Face Inference API (`mistralai/Mistral-7B-Instruct-v0.3`, `sentence-transformers/all-MiniLM-L6-v2`), decoupled `ChatProvider` & `EmbeddingProvider` abstractions |
-| **Background Processing** | Redis, Celery |
-| **Storage** | Abstracted Storage Service (Local filesystem provider + S3/MinIO provider) |
-| **Observability** | Structured Logging, Custom `AIUsage` Telemetry, Langfuse tracing hooks |
+| **AI Layer** | Hugging Face Inference API (`meta-llama/Llama-3.1-8B-Instruct`, `BAAI/bge-small-en-v1.5`), decoupled `ChatProvider` & `EmbeddingProvider` abstractions |
+| **Background Processing** | Redis, Celery (Upstash TLS) |
+| **Storage** | Abstracted Storage Service (Supabase Storage provider + Local test fallback) |
+| **Observability** | Structured Logging, LangSmith tracing hooks, Custom `AIUsage` Telemetry |
 
 ---
 
@@ -84,7 +84,7 @@ The system continuously answers three questions for the learner:
 │   │   ├── models/               # SQLAlchemy domain entities (User, Space, Project, Material, Concept, Quiz, Assessment, etc.)
 │   │   ├── schemas/              # Pydantic validation schemas
 │   │   ├── repositories/         # Scoped data access layer
-│   │   ├── services/             # Business logic & storage abstraction (Local / S3)
+│   │   ├── services/             # Business logic & storage abstraction (Local / Supabase)
 │   │   ├── ai/                   # AI provider abstraction & telemetry recorder
 │   │   ├── workers/              # Celery background queue configuration
 │   │   └── main.py               # FastAPI application entry & health check

@@ -48,8 +48,8 @@ dist/
 
 # Environment & Secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 *.pem
 *.key
 *.cert
@@ -59,8 +59,8 @@ dist/
 *.sqlite3
 *.db
 **/*.db
-backend/storage/uploads/
-storage/uploads/
+/backend/storage/
+/storage/
 
 # OS / Editor files
 .DS_Store

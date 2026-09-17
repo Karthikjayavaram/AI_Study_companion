@@ -1,11 +1,25 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
-import { TrendingUp, Sparkles, Target, AlertTriangle, CheckCircle, BookOpen, RefreshCw, BarChart3 } from 'lucide-react';
-import { api, GrowthSummary, ConceptMastery } from '../api/client';
+import { useParams, Link } from 'react-router-dom';
+import {
+  TrendingUp,
+  Sparkles,
+  Target,
+  AlertTriangle,
+  CheckCircle,
+  BookOpen,
+  RefreshCw,
+  BarChart3,
+  ArrowRight,
+  Flame,
+  Award,
+  Compass,
+} from 'lucide-react';
+import { api, GrowthSummary, ConceptMastery, NextActionResponse } from '../api/client';
 
 export const Growth: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const [summary, setSummary] = useState<GrowthSummary | null>(null);
+  const [recommendation, setRecommendation] = useState<NextActionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -14,8 +28,14 @@ export const Growth: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.getGrowthSummary(projectId);
-      setSummary(res.data);
+      const [summaryRes, recRes] = await Promise.all([
+        api.getGrowthSummary(projectId),
+        api.getNextRecommendation(projectId).catch(() => ({ data: null })),
+      ]);
+      setSummary(summaryRes.data);
+      if (recRes?.data) {
+        setRecommendation(recRes.data);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load growth data');
     } finally {
@@ -54,6 +74,40 @@ export const Growth: React.FC = () => {
     }
   };
 
+  const getRecommendationDetails = (rec: NextActionResponse) => {
+    switch (rec.recommendation_type) {
+      case 'practice_concept':
+        return {
+          badge: 'Needs Practice',
+          badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+          buttonText: 'Practice Now',
+          icon: Flame,
+        };
+      case 'review_concept':
+        return {
+          badge: 'Developing',
+          badgeColor: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+          buttonText: 'Review Concept',
+          icon: Sparkles,
+        };
+      case 'mixed_review':
+        return {
+          badge: 'Challenge Ready',
+          badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+          buttonText: 'Start Mixed Quiz',
+          icon: Award,
+        };
+      case 'start_learning':
+      default:
+        return {
+          badge: 'Getting Started',
+          badgeColor: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+          buttonText: 'Explore Materials',
+          icon: Compass,
+        };
+    }
+  };
+
   const getOverallGradient = (score: number) => {
     if (score >= 80) return 'from-emerald-600/20 to-emerald-900/10 border-emerald-500/30';
     if (score >= 50) return 'from-indigo-600/20 to-indigo-900/10 border-indigo-500/30';
@@ -86,6 +140,8 @@ export const Growth: React.FC = () => {
     );
   }
 
+  const recDetails = recommendation ? getRecommendationDetails(recommendation) : null;
+
   if (!summary || summary.total_concepts === 0) {
     return (
       <div className="space-y-6">
@@ -93,12 +149,23 @@ export const Growth: React.FC = () => {
           <div className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Growth & Mastery</div>
           <h1 className="text-2xl font-bold text-white tracking-tight mt-1">Concept Mastery Breakdown</h1>
         </div>
-        <div className="flex flex-col items-center justify-center p-12 rounded-2xl bg-slate-900/40 border border-slate-800 text-center">
-          <BookOpen className="w-12 h-12 text-slate-600 mb-4" />
-          <h3 className="text-lg font-bold text-slate-300 mb-2">No Concepts Tracked Yet</h3>
+        <div className="flex flex-col items-center justify-center p-12 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-4">
+          <BookOpen className="w-12 h-12 text-slate-600 mb-2" />
+          <h3 className="text-lg font-bold text-slate-300">No Concepts Tracked Yet</h3>
           <p className="text-sm text-slate-500 max-w-md">
             Complete quizzes to automatically extract and track concepts. Your mastery data will appear here as you practice.
           </p>
+          {recommendation && recDetails && (
+            <div className="pt-2">
+              <Link
+                to={recommendation.action_url}
+                className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition-all shadow-md shadow-indigo-600/30"
+              >
+                <span>{recDetails.buttonText}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -124,6 +191,38 @@ export const Growth: React.FC = () => {
         </button>
       </div>
 
+      {/* Recommended Next Action Card */}
+      {recommendation && recDetails && (
+        <div className="p-6 rounded-2xl bg-gradient-to-br from-indigo-950/60 to-slate-900 border border-indigo-500/40 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-semibold text-indigo-400">
+              <Sparkles className="w-4 h-4" />
+              <span>Next Learning Action</span>
+            </div>
+            <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border ${recDetails.badgeColor}`}>
+              {recDetails.badge}
+            </span>
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1 max-w-2xl">
+              <h2 className="text-lg font-bold text-white tracking-tight">{recommendation.title}</h2>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                {recommendation.reason}
+              </p>
+            </div>
+            <div className="shrink-0">
+              <Link
+                to={recommendation.target_concept_id ? `${recommendation.action_url}?concept_id=${recommendation.target_concept_id}` : recommendation.action_url}
+                className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-5 rounded-xl transition-all shadow-md shadow-indigo-600/30"
+              >
+                <span>{recDetails.buttonText}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Overall Mastery Summary */}
       <div className={`p-6 rounded-2xl bg-gradient-to-br ${getOverallGradient(summary.overall_mastery)} border space-y-4`}>
         <div className="flex items-center gap-2 text-xs font-semibold text-white/80">
@@ -138,54 +237,58 @@ export const Growth: React.FC = () => {
             <span className="text-lg font-bold text-white/60 ml-1">%</span>
           </div>
           <div className="flex gap-4 pb-1">
-            <div className="text-center">
-              <div className="text-lg font-bold text-emerald-400 tabular-nums">{summary.mastered_count}</div>
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider">Mastered</div>
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              <span className="text-slate-300 font-semibold">{summary.mastered_count}</span>
+              <span className="text-slate-400">Mastered</span>
             </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-indigo-400 tabular-nums">{summary.improving_count}</div>
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider">Stable</div>
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+              <span className="text-slate-300 font-semibold">{summary.improving_count}</span>
+              <span className="text-slate-400">Stable</span>
             </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-amber-400 tabular-nums">{summary.needs_attention_count}</div>
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider">Attention</div>
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+              <span className="text-slate-300 font-semibold">{summary.needs_attention_count}</span>
+              <span className="text-slate-400">Needs Attention</span>
             </div>
           </div>
         </div>
-        {/* Overall progress bar */}
-        <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
+        <div className="w-full bg-black/30 rounded-full h-2.5 overflow-hidden">
           <div
-            className="bg-gradient-to-r from-indigo-500 to-emerald-500 h-3 rounded-full transition-all duration-700 ease-out"
+            className="h-2.5 rounded-full bg-white transition-all duration-500"
             style={{ width: `${Math.min(summary.overall_mastery, 100)}%` }}
           />
         </div>
       </div>
 
-      {/* Individual Concept Progress */}
+      {/* Individual Concepts */}
       <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
-        <h2 className="text-sm font-bold text-white uppercase tracking-wider">Tracked Concepts</h2>
-        <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            <Target className="w-4 h-4 text-indigo-400" />
+            <span>Tracked Concepts ({summary.masteries.length})</span>
+          </div>
+          <span className="text-xs text-slate-500">Sorted by mastery score</span>
+        </div>
+
+        <div className="divide-y divide-slate-800/60">
           {summary.masteries.map((m: ConceptMastery) => {
             const badge = getStatusBadge(m.status);
-            const conceptName = m.concept?.name || `Concept ${m.concept_id.slice(0, 8)}`;
-            const attemptInfo = m.total_attempts > 0
-              ? `${m.correct_attempts}/${m.total_attempts} correct`
-              : 'No attempts';
-
+            const conceptName = m.concept?.name || 'Unknown Concept';
             return (
-              <div key={m.id} className="p-4 rounded-xl bg-slate-800/40 border border-slate-800 space-y-2.5 hover:bg-slate-800/60 transition-colors">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-white">{conceptName}</h3>
-                    <span className="text-[11px] text-slate-400">{attemptInfo}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${badge.className}`}>
+              <div key={m.id} className="py-4 first:pt-0 last:pb-0 space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-white">{conceptName}</span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-full border ${badge.className}`}>
                       {badge.icon}
                       {badge.label}
                     </span>
-                    <span className="text-sm font-mono font-bold text-white tabular-nums">
-                      {Math.round(m.score)}%
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-slate-400">
+                    <span>
+                      {m.correct_attempts}/{m.total_attempts} correct ({Math.round(m.score)}%)
                     </span>
                   </div>
                 </div>

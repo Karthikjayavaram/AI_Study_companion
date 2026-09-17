@@ -227,9 +227,7 @@ def delete_material(
     if material.file_path:
         try:
             storage_service = get_storage_service()
-            # extract relative path
-            if os.path.exists(material.file_path):
-                os.remove(material.file_path)
+            storage_service.delete_file(material.file_path)
         except Exception:
             pass
 
