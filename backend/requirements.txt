@@ -17,3 +17,4 @@ pytest-asyncio>=0.23.6
 redis>=5.0.4
 celery>=5.4.0
 langsmith>=0.1.0
+pypdf>=5.0.0,<7.0.0
