@@ -17,7 +17,16 @@ interface AuthContextType {
   logout: () => void;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const defaultAuthContext: AuthContextType = {
+  user: null,
+  isAuthenticated: false,
+  isLoading: false,
+  login: async () => {},
+  register: async () => {},
+  logout: () => {},
+};
+
+export const AuthContext = createContext<AuthContextType>(defaultAuthContext);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -33,6 +42,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await api.getMe();
       if (res.success && res.data) {
         setUser(res.data);
+      } else {
+        clearAuthToken();
+        setUser(null);
       }
     } catch {
       clearAuthToken();
@@ -82,8 +94,5 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  return context || defaultAuthContext;
 };

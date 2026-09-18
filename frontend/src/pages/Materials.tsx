@@ -14,8 +14,12 @@ import {
   Eye,
   ArrowLeft,
   BookOpen,
+  Bot,
+  Sparkles,
+  ArrowRight,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { TopicSelectionRequired } from '../components/common/TopicSelectionRequired';
 
 interface MaterialData {
   id: string;
@@ -32,9 +36,14 @@ interface MaterialData {
 }
 
 export const Materials: React.FC = () => {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+  const activeProjectId = routeProjectId || localStorage.getItem('last_active_project_id');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [projectName, setProjectName] = useState<string>('');
+  const [spaceName, setSpaceName] = useState<string>('');
+  const [spaceId, setSpaceId] = useState<string>('');
   const [materials, setMaterials] = useState<MaterialData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,14 +62,26 @@ export const Materials: React.FC = () => {
   const [selectedMaterial, setSelectedMaterial] = useState<MaterialData | null>(null);
 
   const fetchMaterials = async () => {
-    if (!projectId) return;
+    if (!activeProjectId) return;
     try {
       setLoading(true);
       setError(null);
-      const res = await api.getMaterials(projectId);
-      setMaterials(res.data || []);
+      const [matRes, projRes] = await Promise.all([
+        api.getMaterials(activeProjectId),
+        api.getProject(activeProjectId).catch(() => null),
+      ]);
+      setMaterials(matRes.data || []);
+
+      if (projRes?.data) {
+        setProjectName(projRes.data.name);
+        setSpaceId(projRes.data.space_id);
+        if (projRes.data.space_id) {
+          const spaceRes = await api.getSpace(projRes.data.space_id).catch(() => null);
+          if (spaceRes?.data) setSpaceName(spaceRes.data.name);
+        }
+      }
     } catch (err: any) {
-      setError(err.message || 'Failed to load materials');
+      setError(err.message || 'Failed to load study materials');
     } finally {
       setLoading(false);
     }
@@ -68,7 +89,16 @@ export const Materials: React.FC = () => {
 
   useEffect(() => {
     fetchMaterials();
-  }, [projectId]);
+  }, [activeProjectId]);
+
+  if (!activeProjectId) {
+    return (
+      <TopicSelectionRequired
+        featureName="Study Materials"
+        description="Select a learning topic from My Learning to manage study notes and PDFs."
+      />
+    );
+  }
 
   const formatErrorMessage = (rawError: string | null): string => {
     if (!rawError) return 'An unexpected error occurred. Please try again.';
@@ -86,7 +116,7 @@ export const Materials: React.FC = () => {
   };
 
   const handleFileUpload = async (file: File) => {
-    if (!projectId) return;
+    if (!activeProjectId) return;
     setUploadError(null);
 
     // Validate size (15MB)
@@ -96,7 +126,7 @@ export const Materials: React.FC = () => {
     }
 
     const formData = new FormData();
-    formData.append('project_id', projectId);
+    formData.append('project_id', activeProjectId);
     formData.append('title', file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' '));
     formData.append('file', file);
 
@@ -130,12 +160,12 @@ export const Materials: React.FC = () => {
 
   const handleCreateTextMaterial = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!projectId || !textTitle.trim() || !textContent.trim()) return;
+    if (!activeProjectId || !textTitle.trim() || !textContent.trim()) return;
 
     try {
       setSubmittingText(true);
       setTextModalError(null);
-      await api.createTextMaterial(projectId, {
+      await api.createTextMaterial(activeProjectId, {
         title: textTitle.trim(),
         content: textContent.trim(),
       });
@@ -203,14 +233,32 @@ export const Materials: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Link to={`/projects/${projectId}`} className="text-xs text-slate-400 hover:text-white transition-colors flex items-center gap-1">
-              <ArrowLeft className="w-3.5 h-3.5" /> Project Workspace
+    <div className="space-y-6 max-w-5xl mx-auto">
+      {/* Context Breadcrumb */}
+      <div className="flex items-center gap-2 text-xs text-slate-400">
+        <Link to="/spaces" className="hover:text-white transition-colors">My Learning</Link>
+        <span>/</span>
+        {spaceId && (
+          <>
+            <Link to={`/spaces/${spaceId}`} className="hover:text-white transition-colors flex items-center gap-1">
+              <BookOpen className="w-3 h-3 text-indigo-400" />
+              <span>{spaceName || 'Space'}</span>
             </Link>
+            <span>/</span>
+          </>
+        )}
+        <Link to={`/projects/${activeProjectId}`} className="hover:text-white transition-colors">
+          {projectName || 'Project Workspace'}
+        </Link>
+        <span>/</span>
+        <span className="text-white font-semibold">Study Materials</span>
+      </div>
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-slate-900/60 border border-slate-800">
+        <div>
+          <div className="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-1">
+            {projectName || 'Learning Project'}
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Study Materials</h1>
           <p className="text-xs text-slate-400">Add course notes and PDFs to ground your AI Tutor and adaptive quizzes</p>
@@ -267,6 +315,46 @@ export const Materials: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Post-Upload / Materials Ready Quick Action Callout */}
+      {!loading && materials.length > 0 && (
+        <div className="p-5 rounded-2xl bg-gradient-to-r from-indigo-950/50 via-slate-900 to-emerald-950/40 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shrink-0">
+              <Bot className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white">Your study materials are ready!</h3>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  Ready for Learning
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Ask your AI Tutor questions grounded in your notes or take an adaptive practice quiz.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            <Link
+              to={`/projects/${activeProjectId}/tutor`}
+              className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition-all shadow-md shadow-indigo-600/30"
+              id="materials-learn-with-tutor-btn"
+            >
+              <Bot className="w-4 h-4" />
+              <span>Learn with AI Tutor</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+            <Link
+              to={`/projects/${activeProjectId}/quiz`}
+              className="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold py-2.5 px-3.5 rounded-xl border border-slate-700 transition-colors"
+            >
+              <Sparkles className="w-4 h-4 text-emerald-400" />
+              <span>Take Quiz</span>
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Uploaded Documents List */}
       <div className="space-y-3">
@@ -347,7 +435,7 @@ export const Materials: React.FC = () => {
                 <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-center shrink-0">
                   {getStatusBadge(mat.status)}
                   <Link
-                    to={`/projects/${projectId}/tutor`}
+                    to={`/projects/${activeProjectId}/tutor`}
                     onClick={(e) => e.stopPropagation()}
                     className="p-1.5 text-slate-400 hover:text-indigo-300 hover:bg-indigo-600/10 rounded-lg transition-colors"
                     title="Ask AI Tutor about this"

@@ -73,12 +73,13 @@ def create_text_material(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Content cannot be empty.")
 
 
-    text_content = material_in.content.strip()
+    clean_title = material_in.title.replace("\x00", "").strip()
+    text_content = material_in.content.replace("\x00", "").strip()
 
     material = Material(
         project_id=project_id,
         user_id=current_user.id,
-        title=material_in.title.strip(),
+        title=clean_title,
         material_type="text",
         extracted_text=text_content,
         file_size=len(text_content.encode("utf-8")),
@@ -156,12 +157,18 @@ async def upload_material(
         except Exception:
             extracted_text = file_bytes.decode("latin-1", errors="ignore")
 
+    if extracted_text:
+        extracted_text = extracted_text.replace("\x00", "")
+
+    clean_filename = filename.replace("\x00", "")
+    clean_title = (title or "").replace("\x00", "").strip() or clean_filename
+
     material = Material(
         project_id=project_id,
         user_id=current_user.id,
-        title=(title or "").strip() or filename,
+        title=clean_title,
         material_type="document",
-        file_name=filename,
+        file_name=clean_filename,
         file_path=saved_path,
         file_size=file_size,
         mime_type=file.content_type or "application/pdf",

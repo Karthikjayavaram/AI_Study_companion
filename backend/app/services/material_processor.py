@@ -31,9 +31,11 @@ class MaterialProcessor:
             for page_idx, page in enumerate(reader.pages):
                 page_text = page.extract_text()
                 if page_text:
-                    text_pages.append(f"--- Page {page_idx + 1} ---\n{page_text.strip()}")
+                    cleaned_page = page_text.replace("\x00", "").strip()
+                    if cleaned_page:
+                        text_pages.append(f"--- Page {page_idx + 1} ---\n{cleaned_page}")
 
-            full_text = "\n\n".join(text_pages).strip()
+            full_text = "\n\n".join(text_pages).strip().replace("\x00", "")
 
             if not full_text:
                 return None, "ready", "No extractable text found in PDF (might contain scanned images)."

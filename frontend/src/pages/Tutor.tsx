@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import {
   Send,
   Bot,
@@ -16,9 +16,13 @@ import {
   Lightbulb,
   HelpCircle,
   BookOpen,
+  FolderKanban,
+  CheckSquare,
+  ArrowRight,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { MarkdownRenderer } from '../components/common/MarkdownRenderer';
+import { TopicSelectionRequired } from '../components/common/TopicSelectionRequired';
 
 interface Citation {
   material_id?: string;
@@ -51,18 +55,23 @@ const STARTER_PROMPTS = [
 ];
 
 export const Tutor: React.FC = () => {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+  const activeProjectId = routeProjectId || localStorage.getItem('last_active_project_id');
 
-  const [projectName, setProjectName] = useState<string>('Project Tutor');
+  const [projectName, setProjectName] = useState<string>('Study Topic');
+  const [spaceName, setSpaceName] = useState<string>('');
+  const [spaceId, setSpaceId] = useState<string>('');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
 
+  const [materialsCount, setMaterialsCount] = useState<number | null>(null);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  const location = useLocation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -70,20 +79,44 @@ export const Tutor: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // 1. Fetch Project & Conversations on mount
   useEffect(() => {
-    if (!projectId) return;
+    const params = new URLSearchParams(location.search);
+    const promptQuery = params.get('prompt');
+    if (promptQuery) {
+      setInput(promptQuery);
+      setTimeout(() => textareaRef.current?.focus(), 150);
+    }
+  }, [location.search]);
+
+  // 1. Fetch Project, Space, Materials & Conversations on mount
+  useEffect(() => {
+    if (!activeProjectId) return;
 
     const loadInitialData = async () => {
       setLoading(true);
       setError(null);
       try {
-        const projRes = await api.getProject(projectId).catch(() => null);
-        if (projRes?.data?.name) {
+        const [projRes, matRes, convsRes] = await Promise.all([
+          api.getProject(activeProjectId).catch(() => null),
+          api.getMaterials(activeProjectId).catch(() => ({ data: [] })),
+          api.getConversations(activeProjectId).catch(() => ({ data: [] })),
+        ]);
+
+        if (projRes?.data) {
           setProjectName(projRes.data.name);
+          setSpaceId(projRes.data.space_id);
+          localStorage.setItem('last_active_project_id', activeProjectId);
+          localStorage.setItem('last_active_project_name', projRes.data.name);
+
+          if (projRes.data.space_id) {
+            const spaceRes = await api.getSpace(projRes.data.space_id).catch(() => null);
+            if (spaceRes?.data) setSpaceName(spaceRes.data.name);
+          }
         }
 
-        const convsRes = await api.getConversations(projectId);
+        const fetchedMaterials = matRes.data || [];
+        setMaterialsCount(fetchedMaterials.length);
+
         const fetchedConvs: Conversation[] = convsRes.data || [];
         setConversations(fetchedConvs);
 
@@ -102,7 +135,7 @@ export const Tutor: React.FC = () => {
     };
 
     loadInitialData();
-  }, [projectId]);
+  }, [activeProjectId]);
 
   // Load messages for a specific conversation ID
   const loadMessagesForConversation = async (convId: string) => {
@@ -121,10 +154,10 @@ export const Tutor: React.FC = () => {
 
   // Create a fresh conversation session
   const handleStartNewConversation = async () => {
-    if (!projectId || submitting) return;
+    if (!activeProjectId || submitting) return;
     setError(null);
     try {
-      const res = await api.createConversation(projectId, { title: 'New Study Session' });
+      const res = await api.createConversation(activeProjectId, { title: 'New Study Session' });
       const newConv = res.data;
       setConversations((prev) => [newConv, ...prev]);
       setActiveConversationId(newConv.id);
@@ -137,7 +170,7 @@ export const Tutor: React.FC = () => {
   // Handle sending a user message
   const handleSendQuery = async (customText?: string) => {
     const question = (customText !== undefined ? customText : input).trim();
-    if (!question || !projectId || submitting) return;
+    if (!question || !activeProjectId || submitting) return;
 
     setInput('');
     setError(null);
@@ -162,14 +195,14 @@ export const Tutor: React.FC = () => {
         responseData = res.data;
       } else {
         const res = await api.queryTutor({
-          project_id: projectId,
+          project_id: activeProjectId,
           question,
         });
         responseData = res.data;
         if (responseData.conversation_id) {
           currentConvId = responseData.conversation_id;
           setActiveConversationId(currentConvId);
-          const convsRes = await api.getConversations(projectId);
+          const convsRes = await api.getConversations(activeProjectId);
           setConversations(convsRes.data || []);
         }
       }
@@ -205,15 +238,39 @@ export const Tutor: React.FC = () => {
       .trim();
   };
 
+  if (!activeProjectId) {
+    return <TopicSelectionRequired featureName="AI Tutor" description="Select a learning topic from My Learning to use the AI Tutor." />;
+  }
+
   return (
     <div className="flex flex-col h-[calc(100vh-7.5rem)] max-w-5xl mx-auto space-y-3">
+      {/* Context Breadcrumb */}
+      <div className="flex items-center gap-2 text-xs text-slate-400">
+        <Link to="/spaces" className="hover:text-white transition-colors">My Learning</Link>
+        <span>/</span>
+        {spaceId && (
+          <>
+            <Link to={`/spaces/${spaceId}`} className="hover:text-white transition-colors flex items-center gap-1">
+              <FolderKanban className="w-3 h-3 text-indigo-400" />
+              <span>{spaceName || 'Space'}</span>
+            </Link>
+            <span>/</span>
+          </>
+        )}
+        <Link to={`/projects/${activeProjectId}`} className="hover:text-white transition-colors">
+          {projectName}
+        </Link>
+        <span>/</span>
+        <span className="text-white font-semibold">AI Tutor</span>
+      </div>
+
       {/* Top Header */}
       <div className="p-4 bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-md">
         <div className="flex items-center gap-3">
           <Link
-            to={`/projects/${projectId}`}
+            to={`/projects/${activeProjectId}`}
             className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-            title="Back to Project Hub"
+            title="Back to Topic Workspace"
           >
             <ArrowLeft className="w-4 h-4" />
           </Link>
@@ -255,11 +312,21 @@ export const Tutor: React.FC = () => {
           <button
             onClick={handleStartNewConversation}
             disabled={submitting}
-            className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs text-white font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs text-white font-semibold flex items-center gap-1.5 transition-colors border border-slate-700 shadow-sm"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>New Session</span>
           </button>
+
+          <Link
+            to={`/projects/${activeProjectId}/quiz`}
+            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs text-white font-semibold flex items-center gap-1.5 transition-all shadow-md shadow-emerald-600/25"
+            title="Generate & Take Practice Quiz"
+            id="tutor-take-quiz-header-btn"
+          >
+            <CheckSquare className="w-3.5 h-3.5" />
+            <span>Take Quiz</span>
+          </Link>
         </div>
       </div>
 
@@ -277,6 +344,33 @@ export const Tutor: React.FC = () => {
           <div className="h-full flex items-center justify-center text-slate-400 gap-2 text-xs">
             <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
             <span>Loading study session...</span>
+          </div>
+        ) : materialsCount === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-5">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shadow-lg shadow-indigo-500/10">
+              <BookOpen className="w-8 h-8" />
+            </div>
+            <div className="space-y-2 max-w-md">
+              <h2 className="text-lg font-bold text-white">Let's give your AI Tutor something to learn from first.</h2>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Upload your study material so I can explain concepts and answer questions based on what you're learning.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              <Link
+                to={`/projects/${activeProjectId}/materials`}
+                className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-md shadow-indigo-600/30"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Add Study Material</span>
+              </Link>
+              <Link
+                to="/"
+                className="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-2.5 rounded-xl border border-slate-700 transition-colors"
+              >
+                <span>Go to My Learning</span>
+              </Link>
+            </div>
           </div>
         ) : messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-5">

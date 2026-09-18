@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 384
     HF_TEMPERATURE: float = 0.2
     HF_MAX_TOKENS: int = 1024
-    HF_TIMEOUT_SECONDS: float = 30.0
+    HF_TIMEOUT_SECONDS: float = 120.0
 
     # Text Chunking Configuration
     CHUNK_SIZE: int = 500

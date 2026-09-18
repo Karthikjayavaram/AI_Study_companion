@@ -97,6 +97,8 @@ class QuestionResultDetail(BaseModel):
     source_material_title: Optional[str] = None
     source_chunk_id: Optional[str] = None
     source_chunk_text: Optional[str] = None
+    source_page_number: Optional[int] = None
+    source_citation: Optional[str] = None
 
 
 # Completed attempt result response

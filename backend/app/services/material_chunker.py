@@ -20,8 +20,9 @@ class MaterialChunker:
         if not text or not text.strip():
             return []
 
-        # Normalize whitespace (preserve newlines but collapse multiple blank lines)
-        normalized_text = re.sub(r'\n{3,}', '\n\n', text.strip())
+        # Remove null bytes and normalize whitespace
+        clean_text = text.replace("\x00", "")
+        normalized_text = re.sub(r'\n{3,}', '\n\n', clean_text.strip())
 
         if len(normalized_text) <= self.chunk_size:
             return [{

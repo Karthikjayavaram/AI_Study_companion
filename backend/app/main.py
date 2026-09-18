@@ -34,9 +34,12 @@ app = FastAPI(
 
 # CORS middleware
 origins = settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else [settings.CORS_ORIGINS]
+allow_all = "*" in origins or not origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=origins if not allow_all else ["*"],
+    allow_origin_regex=r"^https?://.*$" if allow_all else None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,5 +65,8 @@ def health_check() -> Dict[str, Any]:
     }
 
 
-# Mount API V1
+# Mount API V1 (primary prefix)
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Also mount at root as fallback for deployments where clients hit /auth/register or /spaces directly
+app.include_router(api_router)

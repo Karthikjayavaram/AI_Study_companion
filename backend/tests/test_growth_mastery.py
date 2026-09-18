@@ -19,6 +19,9 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import json
+from app.ai.base import BaseLLMClient, LLMResult
+import app.api.v1.endpoints.quiz as quiz_endpoint_module
 
 from app.models.space import Space
 from app.models.project import Project
@@ -181,10 +184,49 @@ def _create_quiz_with_concepts(db, user, project, chunks):
 class TestConceptExtractionDuringQuizGeneration:
     """Verify that quiz generation creates concepts and links them to questions."""
 
-    def test_generate_quiz_creates_concepts_from_fallback(self, client, db, test_user, auth_headers):
-        """When LLM is unavailable (fallback), concepts may not be extracted,
-        but the quiz should still be created successfully."""
-        _, project, _, _ = _create_project_with_materials(db, test_user)
+    def test_generate_quiz_creates_concepts(self, client, db, test_user, auth_headers, monkeypatch):
+        """Verify that quiz generation creates concepts from grounded questions and links them."""
+        _, project, _, chunks = _create_project_with_materials(db, test_user)
+
+        class MockGroundedLLM(BaseLLMClient):
+            def generate_text(self, prompt, **kwargs):
+                return LLMResult(
+                    content=json.dumps({
+                        "quiz_title": "Concept Extraction Quiz",
+                        "quiz_description": "Testing concept creation",
+                        "questions": [
+                            {
+                                "question_text": "What does this material cover?",
+                                "options": ["Fundamental concepts", "Bicycles", "Cooking", "Space flight"],
+                                "correct_answer": "Fundamental concepts",
+                                "explanation": "Covered in topic 0.",
+                                "difficulty": "medium",
+                                "source_chunk_id": chunks[0].id,
+                                "evidence_quote": "This covers fundamental concepts.",
+                                "concept_name": "Fundamental Concepts",
+                            }
+                        ],
+                    }),
+                    model="mock-model",
+                    prompt_tokens=100,
+                    completion_tokens=50,
+                    total_tokens=150,
+                    latency_ms=10,
+                )
+
+            def embed_texts(self, texts):
+                return [[0.1] * 1536 for _ in texts]
+
+            def embed_text(self, text):
+                return [0.1] * 1536
+
+            def generate_embeddings(self, texts):
+                return [[0.1] * 1536 for _ in texts]
+
+            def generate_structured(self, prompt, schema, **kwargs):
+                return {}
+
+        monkeypatch.setattr(quiz_endpoint_module.quiz_service, "ai_provider", MockGroundedLLM())
 
         res = client.post(
             f"/api/v1/projects/{project.id}/quizzes/generate",
@@ -195,6 +237,13 @@ class TestConceptExtractionDuringQuizGeneration:
         data = res.json()["data"]
         assert data["question_count"] >= 1
         assert data["status"] == "ready"
+
+        # Verify concept was created and linked to project
+        created = db.query(Concept).filter(
+            Concept.project_id == project.id,
+            Concept.name == "Fundamental Concepts",
+        ).first()
+        assert created is not None
 
     def test_concept_find_or_create_deduplicates(self, db, test_user):
         """Verify that creating the same concept name twice in a project

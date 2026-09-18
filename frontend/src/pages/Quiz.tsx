@@ -22,15 +22,20 @@ import {
   Bot,
 } from 'lucide-react';
 import { api, QuizItem, QuestionSanitized, QuizAttemptStart, QuizAttemptResult, ApiError } from '../api/client';
+import { TopicSelectionRequired } from '../components/common/TopicSelectionRequired';
 
 type ViewMode = 'list' | 'taking' | 'results';
 
 export const Quiz: React.FC = () => {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+  const activeProjectId = routeProjectId || localStorage.getItem('last_active_project_id');
 
   // State
-  const [projectName, setProjectName] = useState<string>('Project Assessment');
+  const [projectName, setProjectName] = useState<string>('Study Topic');
+  const [spaceName, setSpaceName] = useState<string>('');
+  const [spaceId, setSpaceId] = useState<string>('');
   const [quizzes, setQuizzes] = useState<QuizItem[]>([]);
+  const [materialsCount, setMaterialsCount] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,26 +59,34 @@ export const Quiz: React.FC = () => {
   // Results state
   const [evaluatedResult, setEvaluatedResult] = useState<QuizAttemptResult | null>(null);
 
-  // 1. Fetch project info and existing quizzes
+  // 1. Fetch project info, space info, materials count, and existing quizzes
   const loadQuizzes = async () => {
-    if (!projectId) return;
+    if (!activeProjectId) return;
     setLoading(true);
     setError(null);
     try {
-      // Get project details
-      try {
-        const pRes = await api.getProject(projectId);
-        if (pRes.data?.name) {
-          setProjectName(pRes.data.name);
+      const [projRes, matRes, quizzesRes] = await Promise.all([
+        api.getProject(activeProjectId).catch(() => null),
+        api.getMaterials(activeProjectId).catch(() => ({ data: [] })),
+        api.getQuizzes(activeProjectId).catch(() => ({ data: [] })),
+      ]);
+
+      if (projRes?.data) {
+        setProjectName(projRes.data.name);
+        setSpaceId(projRes.data.space_id);
+        localStorage.setItem('last_active_project_id', activeProjectId);
+        localStorage.setItem('last_active_project_name', projRes.data.name);
+
+        if (projRes.data.space_id) {
+          const spaceRes = await api.getSpace(projRes.data.space_id).catch(() => null);
+          if (spaceRes?.data) setSpaceName(spaceRes.data.name);
         }
-      } catch {
-        // Fallback gracefully if project detail endpoint fails
       }
 
-      const res = await api.getQuizzes(projectId);
-      setQuizzes(res.data || []);
+      setMaterialsCount((matRes.data || []).length);
+      setQuizzes(quizzesRes.data || []);
     } catch (err: any) {
-      setError(err.message || 'Failed to load quizzes for this project.');
+      setError(err.message || 'Failed to load quizzes');
     } finally {
       setLoading(false);
     }
@@ -81,18 +94,27 @@ export const Quiz: React.FC = () => {
 
   useEffect(() => {
     loadQuizzes();
-  }, [projectId]);
+  }, [activeProjectId]);
+
+  if (!activeProjectId) {
+    return (
+      <TopicSelectionRequired
+        featureName="Practice Quiz"
+        description="Select a learning topic from My Learning to take practice quizzes."
+      />
+    );
+  }
 
   // 2. Handle Quiz Generation
   const handleGenerateQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!projectId) return;
+    if (!activeProjectId) return;
 
     setIsGenerating(true);
     setGenError(null);
 
     try {
-      const res = await api.generateQuiz(projectId, {
+      const res = await api.generateQuiz(activeProjectId, {
         title: genTitle.trim() || undefined,
         difficulty: genDifficulty,
         question_count: genQuestionCount,
@@ -325,6 +347,22 @@ export const Quiz: React.FC = () => {
   if (viewMode === 'results' && evaluatedResult) {
     const isPassing = evaluatedResult.score >= 70;
     const accuracy = Math.round((evaluatedResult.correct_answers / (evaluatedResult.total_questions || 1)) * 100);
+    const failedQuestions = evaluatedResult.results.filter((r) => !r.is_correct);
+    const hasFailed = failedQuestions.length > 0;
+
+    const failedPromptText = hasFailed
+      ? `I just completed the quiz "${evaluatedResult.quiz_title}" and scored ${evaluatedResult.score}%. I missed ${failedQuestions.length} question${failedQuestions.length > 1 ? 's' : ''}. Can you help me understand these concepts from our study materials?\n\n` +
+        failedQuestions
+          .slice(0, 5)
+          .map(
+            (q, idx) =>
+              `Question ${idx + 1}: "${q.question_text}"\n- My answer: "${q.user_answer || 'No answer'}"\n- Correct answer: "${q.correct_answer}"\n- Material explanation: "${q.explanation || ''}"`
+          )
+          .join('\n\n') +
+        `\n\nPlease break down why the correct answers are right and explain the underlying principles simply.`
+      : `I scored 100% on the quiz "${evaluatedResult.quiz_title}"! Can you ask me a deeper conceptual follow-up question or explain advanced applications of these concepts?`;
+
+    const tutorReviewUrl = `/projects/${activeProjectId}/tutor?prompt=${encodeURIComponent(failedPromptText)}`;
 
     return (
       <div className="max-w-4xl mx-auto space-y-6">
@@ -364,50 +402,115 @@ export const Quiz: React.FC = () => {
             </div>
           </div>
 
-          {/* Next Learning Action banner */}
-          <div className="p-4 rounded-xl bg-indigo-950/40 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <Sparkles className="w-5 h-5 text-indigo-400 shrink-0" />
-              <div>
-                <div className="text-xs font-bold text-white">Next Learning Action</div>
-                <div className="text-xs text-slate-300">
-                  {isPassing
-                    ? 'Great mastery! Check your updated growth tracking or challenge yourself with another topic.'
-                    : 'Review the questions you missed with your AI Tutor to solidify the foundational concepts.'}
+          {/* Dual Primary Post-Quiz Actions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-800/80">
+            {/* Option 1: Learn Failed Concepts with AI Tutor */}
+            <div
+              className={`p-5 rounded-2xl border flex flex-col justify-between gap-4 shadow-lg transition-all ${
+                hasFailed
+                  ? 'bg-gradient-to-br from-indigo-950/60 via-slate-900 to-rose-950/30 border-indigo-500/40'
+                  : 'bg-gradient-to-br from-indigo-950/60 via-slate-900 to-emerald-950/30 border-indigo-500/30'
+              }`}
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-indigo-400">
+                    <div className="p-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                      <Bot className="w-4 h-4" />
+                    </div>
+                    <span className="text-xs font-bold uppercase tracking-wider">AI Remediation</span>
+                  </div>
+                  {hasFailed ? (
+                    <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                      {failedQuestions.length} Failed {failedQuestions.length === 1 ? 'Concept' : 'Concepts'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                      100% Mastery
+                    </span>
+                  )}
                 </div>
+                <h3 className="text-base font-bold text-white">
+                  {hasFailed ? 'Learn Failed Concepts with Tutor' : 'Deepen Understanding with Tutor'}
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {hasFailed
+                    ? 'Ask your AI Tutor to explain the exact questions you missed, grounded in your project study notes.'
+                    : 'Ask your AI Tutor advanced follow-up questions and explore real-world applications.'}
+                </p>
               </div>
+
+              <Link
+                to={tutorReviewUrl}
+                id="quiz-learn-failed-concepts-btn"
+                className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shadow-md shadow-indigo-600/30"
+              >
+                <Bot className="w-4 h-4" />
+                <span>{hasFailed ? 'Learn Failed Concepts with Tutor' : 'Chat with AI Tutor'}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Link
-                to={`/projects/${projectId}/tutor`}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-sm"
+
+            {/* Option 2: Take Another Quiz */}
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-950/50 via-slate-900 to-slate-900 border border-emerald-500/40 flex flex-col justify-between gap-4 shadow-lg">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-emerald-400">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <span className="text-xs font-bold uppercase tracking-wider">Practice More</span>
+                  </div>
+                  <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    Adaptive Quiz
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-white">Take Another Quiz</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Generate a new quiz from your materials to test more questions and strengthen your mastery.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setViewMode('list');
+                  setIsGeneratorOpen(true);
+                }}
+                id="quiz-take-another-quiz-btn"
+                className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-all shadow-md shadow-emerald-600/30"
               >
-                <Bot className="w-3.5 h-3.5" /> Ask AI Tutor
-              </Link>
-              <Link
-                to={`/projects/${projectId}/growth`}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
-              >
-                View Mastery
-              </Link>
+                <Sparkles className="w-4 h-4" />
+                <span>Take Another Quiz</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pt-1 border-t border-slate-800/80">
-            <button
-              onClick={() => setViewMode('list')}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
+          {/* Secondary Action Buttons */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={() => setViewMode('list')}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                All Quizzes
+              </button>
+              <button
+                onClick={() => handleStartQuiz(evaluatedResult.quiz_id)}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Retake This Quiz
+              </button>
+            </div>
+            <Link
+              to={`/projects/${activeProjectId}/growth`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-indigo-400 hover:text-indigo-300 text-xs font-semibold hover:bg-indigo-600/10 transition-colors"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              All Quizzes
-            </button>
-            <button
-              onClick={() => handleStartQuiz(evaluatedResult.quiz_id)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-md shadow-indigo-600/20"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Retake Quiz
-            </button>
+              <span>View Progress</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
         </div>
 
@@ -483,17 +586,34 @@ export const Quiz: React.FC = () => {
                 )}
 
                 {/* Source Grounding Citation */}
-                {(res.source_material_title || res.source_chunk_text) && (
+                {(res.source_citation || res.source_material_title || res.source_chunk_text) && (
                   <div className="p-3 rounded-xl bg-indigo-950/20 border border-indigo-500/20 text-xs space-y-1.5">
                     <div className="flex items-center gap-1.5 font-semibold text-indigo-400">
                       <BookOpen className="w-3.5 h-3.5" />
-                      <span>Reference Material: {cleanSourceTitle || 'Project Study Guide'}</span>
+                      <span>
+                        Reference Material: {res.source_citation || (cleanSourceTitle ? (res.source_page_number ? `${cleanSourceTitle} — Page ${res.source_page_number}` : cleanSourceTitle) : 'Project Study Guide')}
+                      </span>
                     </div>
                     {res.source_chunk_text && (
                       <p className="text-slate-400 italic text-[11px] leading-relaxed pl-5 border-l-2 border-indigo-500/30">
                         "{res.source_chunk_text.slice(0, 240)}..."
                       </p>
                     )}
+                  </div>
+                )}
+
+                {/* Learn with Tutor for this specific question */}
+                {!res.is_correct && (
+                  <div className="pt-2 flex justify-end">
+                    <Link
+                      to={`/projects/${activeProjectId}/tutor?prompt=${encodeURIComponent(`Can you help me understand this quiz question I answered incorrectly?\n\nQuestion: "${res.question_text}"\nMy Answer: "${res.user_answer || 'None'}"\nCorrect Answer: "${res.correct_answer}"\n\nWhy is "${res.correct_answer}" the correct answer based on my uploaded materials?`)}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/15 hover:bg-indigo-600/25 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition-colors"
+                      title="Ask AI Tutor to explain this specific question"
+                    >
+                      <Bot className="w-3.5 h-3.5" />
+                      <span>Ask AI Tutor About This Question</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </Link>
                   </div>
                 )}
               </div>
@@ -509,6 +629,26 @@ export const Quiz: React.FC = () => {
   // ---------------------------------------------------------------------------
   return (
     <div className="max-w-5xl mx-auto space-y-6">
+      {/* Context Breadcrumb */}
+      <div className="flex items-center gap-2 text-xs text-slate-400">
+        <Link to="/spaces" className="hover:text-white transition-colors">My Learning</Link>
+        <span>/</span>
+        {spaceId && (
+          <>
+            <Link to={`/spaces/${spaceId}`} className="hover:text-white transition-colors flex items-center gap-1">
+              <BookOpen className="w-3 h-3 text-indigo-400" />
+              <span>{spaceName || 'Space'}</span>
+            </Link>
+            <span>/</span>
+          </>
+        )}
+        <Link to={`/projects/${activeProjectId}`} className="hover:text-white transition-colors">
+          {projectName}
+        </Link>
+        <span>/</span>
+        <span className="text-white font-semibold">Adaptive Quizzes</span>
+      </div>
+
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-slate-900/60 border border-slate-800">
         <div>
@@ -543,6 +683,27 @@ export const Quiz: React.FC = () => {
         <div className="flex items-center justify-center p-12 text-slate-400 text-xs">
           <Loader2 className="w-6 h-6 animate-spin mr-2" />
           Loading project quizzes...
+        </div>
+      ) : materialsCount === 0 ? (
+        <div className="text-center p-12 rounded-2xl bg-slate-900/40 border border-slate-800 space-y-5">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto">
+            <BookOpen className="w-7 h-7" />
+          </div>
+          <div className="space-y-2 max-w-md mx-auto">
+            <h3 className="text-lg font-bold text-white">Learn something first</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Add study material and start learning before taking a practice quiz. Quizzes are generated from your study notes.
+            </p>
+          </div>
+          <div className="pt-2">
+            <Link
+              to={`/projects/${activeProjectId}/materials`}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shadow-md shadow-indigo-600/30"
+            >
+              <FileText className="w-4 h-4" />
+              Add Study Material
+            </Link>
+          </div>
         </div>
       ) : quizzes.length === 0 ? (
         <div className="text-center p-12 rounded-2xl bg-slate-900/40 border border-slate-800 space-y-4">

@@ -15,37 +15,61 @@ import {
   Compass,
 } from 'lucide-react';
 import { api, GrowthSummary, ConceptMastery, NextActionResponse } from '../api/client';
+import { TopicSelectionRequired } from '../components/common/TopicSelectionRequired';
 
 export const Growth: React.FC = () => {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+  const activeProjectId = routeProjectId || localStorage.getItem('last_active_project_id');
+
+  const [projectName, setProjectName] = useState<string>('');
+  const [spaceName, setSpaceName] = useState<string>('');
+  const [spaceId, setSpaceId] = useState<string>('');
   const [summary, setSummary] = useState<GrowthSummary | null>(null);
   const [recommendation, setRecommendation] = useState<NextActionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchGrowthData = useCallback(async () => {
-    if (!projectId) return;
+    if (!activeProjectId) return;
     setLoading(true);
     setError(null);
     try {
-      const [summaryRes, recRes] = await Promise.all([
-        api.getGrowthSummary(projectId),
-        api.getNextRecommendation(projectId).catch(() => ({ data: null })),
+      const [summaryRes, recRes, projRes] = await Promise.all([
+        api.getGrowthSummary(activeProjectId),
+        api.getNextRecommendation(activeProjectId).catch(() => ({ data: null })),
+        api.getProject(activeProjectId).catch(() => null),
       ]);
       setSummary(summaryRes.data);
       if (recRes?.data) {
         setRecommendation(recRes.data);
       }
+      if (projRes?.data) {
+        setProjectName(projRes.data.name);
+        setSpaceId(projRes.data.space_id);
+        if (projRes.data.space_id) {
+          const spaceRes = await api.getSpace(projRes.data.space_id).catch(() => null);
+          if (spaceRes?.data) setSpaceName(spaceRes.data.name);
+        }
+      }
     } catch (err: any) {
-      setError(err.message || 'Failed to load growth data');
+      setError(err.message || 'Failed to load progress data');
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [activeProjectId]);
 
   useEffect(() => {
     fetchGrowthData();
   }, [fetchGrowthData]);
+
+  if (!activeProjectId) {
+    return (
+      <TopicSelectionRequired
+        featureName="Learning Progress"
+        description="Select a learning topic from My Learning to view your concept progress."
+      />
+    );
+  }
 
   const getStatusBadge = (score: number, status?: string) => {
     if (score >= 80) {
@@ -143,27 +167,50 @@ export const Growth: React.FC = () => {
   if (!summary || summary.total_concepts === 0) {
     return (
       <div className="space-y-6">
+        {/* Context Breadcrumb */}
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <Link to="/spaces" className="hover:text-white transition-colors">My Learning</Link>
+          <span>/</span>
+          {spaceId && (
+            <>
+              <Link to={`/spaces/${spaceId}`} className="hover:text-white transition-colors flex items-center gap-1">
+                <BookOpen className="w-3 h-3 text-indigo-400" />
+                <span>{spaceName || 'Space'}</span>
+              </Link>
+              <span>/</span>
+            </>
+          )}
+          <Link to={`/projects/${activeProjectId}`} className="hover:text-white transition-colors">
+            {projectName || 'Project Workspace'}
+          </Link>
+          <span>/</span>
+          <span className="text-slate-200 font-medium">Mastery & Growth</span>
+        </div>
+
         <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800">
-          <div className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Growth & Mastery</div>
-          <h1 className="text-2xl font-bold text-white tracking-tight mt-1">Concept Mastery Breakdown</h1>
+          <div className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Learning Progress</div>
+          <h1 className="text-2xl font-bold text-white tracking-tight mt-1">Concept Mastery & Growth</h1>
+          <p className="text-xs text-slate-400 mt-0.5">Track your understanding over time across key study concepts</p>
         </div>
         <div className="flex flex-col items-center justify-center p-12 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-4">
-          <BookOpen className="w-12 h-12 text-slate-600 mb-2" />
-          <h3 className="text-lg font-bold text-slate-300">No Concepts Tracked Yet</h3>
-          <p className="text-sm text-slate-500 max-w-md">
-            Complete quizzes to automatically extract and track concepts. Your mastery data will appear here as you practice.
-          </p>
-          {recommendation && recDetails && (
-            <div className="pt-2">
-              <Link
-                to={recommendation.action_url}
-                className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition-all shadow-md shadow-indigo-600/30"
-              >
-                <span>{recDetails.buttonText}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-          )}
+          <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+            <BookOpen className="w-7 h-7" />
+          </div>
+          <div className="space-y-1 max-w-md mx-auto">
+            <h3 className="text-lg font-bold text-white">Your progress will appear here</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Complete some learning and practice activities to start seeing your concept mastery and growth insights.
+            </p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-3 pt-2">
+            <Link
+              to={`/projects/${activeProjectId}/materials`}
+              className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold py-2.5 px-4 rounded-xl transition-all shadow-md shadow-indigo-600/30"
+            >
+              <span>Add Study Material</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -171,6 +218,26 @@ export const Growth: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Context Breadcrumb */}
+      <div className="flex items-center gap-2 text-xs text-slate-400">
+        <Link to="/spaces" className="hover:text-white transition-colors">My Learning</Link>
+        <span>/</span>
+        {spaceId && (
+          <>
+            <Link to={`/spaces/${spaceId}`} className="hover:text-white transition-colors flex items-center gap-1">
+              <BookOpen className="w-3 h-3 text-indigo-400" />
+              <span>{spaceName || 'Space'}</span>
+            </Link>
+            <span>/</span>
+          </>
+        )}
+        <Link to={`/projects/${activeProjectId}`} className="hover:text-white transition-colors">
+          {projectName || 'Project Workspace'}
+        </Link>
+        <span>/</span>
+        <span className="text-slate-200 font-medium">Mastery & Growth</span>
+      </div>
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-slate-900/60 border border-slate-800">
         <div>
